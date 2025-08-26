@@ -160,7 +160,7 @@ def extrair_conteudo_noticias(df_noticias):
         'link': df_noticias['link'],
         'content': conteudos
     })
-
+    
 @st.cache_data(ttl=3600)
 def processa_noticias_com_gemini(df_conteudos):
     """Processa o conteúdo das notícias com a API do Gemini para extrair e estruturar dados."""
@@ -187,32 +187,27 @@ def processa_noticias_com_gemini(df_conteudos):
             continue
         
         try:
-            # Limitamos o texto para evitar outros erros de tamanho
             texto_limitado = texto[:20000]
 
-            # CORREÇÃO APLICADA AQUI
-            # O modelo foi atualizado para um mais recente e estável, e a configuração conflitante foi removida.
-            model = genai.GenerativeModel(model_name="gemini-1.5-flash") # Usei o 1.5-flash que é mais comum e estável
+            model = genai.GenerativeModel(model_name="gemini-1.5-flash")
             
             response = model.generate_content(
                 f"Analise o seguinte texto de uma notícia e extraia as informações no formato JSON, conforme o schema solicitado. Texto da notícia:\n\n---\n\n{texto_limitado}",
-                # A chave "response_mime_type" foi removida para evitar conflito com "tools"
+                # A chave "response_mime_type" foi removida para evitar o conflito
                 generation_config={
                     "max_output_tokens": 4096 
                 },
-                tools=[Noticia] # Este é o método correto e suficiente para obter o JSON estruturado
+                tools=[Noticia] # Este é o método correto para obter o JSON estruturado
             )
             
-            # O response.text pode não ser a forma correta de acessar o JSON quando se usa "tools"
-            # É mais seguro extrair a função chamada da resposta.
+            # Extração segura da resposta quando se usa "tools"
             part = response.parts[0]
             function_call = part.function_call
             if function_call:
                  noticia_processada = type(function_call).to_dict(function_call)
-                 # O gemini retorna o json aninhado, precisamos extrair os argumentos
                  noticia_processada = noticia_processada.get('args', {})
             else:
-                # Fallback caso a estrutura da resposta mude ou falhe
+                # Fallback caso a estrutura da resposta mude
                 noticia_processada = json.loads(response.text)
 
             noticia_processada['link'] = links_originais[i]
@@ -226,8 +221,7 @@ def processa_noticias_com_gemini(df_conteudos):
     
     status_text.empty()
     return respostas_json
-
-
+    
 def gerar_newsletter_streamlit(lista_json):
     """Renderiza a newsletter na interface do Streamlit."""
     if not lista_json:
@@ -304,6 +298,7 @@ if st.button("Gerar Newsletter"):
             gerar_newsletter_streamlit(resumos_json)
         else:
             st.error(f"Nenhuma notícia encontrada para o termo '{termo_busca}' em nenhuma das fontes. Tente outro termo.")
+
 
 
 
