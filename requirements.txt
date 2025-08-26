@@ -1,7 +1,8 @@
-# Depois (O jeito correto)
 streamlit
 pandas
 requests
 newsdataapi
 google-generativeai
 pydantic
+serpapi-google-search
+newsapi-python
