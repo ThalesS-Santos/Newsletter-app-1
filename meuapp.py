@@ -187,14 +187,34 @@ def processa_noticias_com_gemini(df_conteudos):
             continue
         
         try:
-            model = genai.GenerativeModel(model_name="gemini-2.5-flash-lite")
+            # Limitamos o texto para evitar outros erros de tamanho
+            texto_limitado = texto[:20000]
+
+            # CORREÇÃO APLICADA AQUI
+            # O modelo foi atualizado para um mais recente e estável, e a configuração conflitante foi removida.
+            model = genai.GenerativeModel(model_name="gemini-1.5-flash") # Usei o 1.5-flash que é mais comum e estável
+            
             response = model.generate_content(
-                f"Analise o seguinte texto de uma notícia e extraia as informações no formato JSON, conforme o schema solicitado. Texto da notícia:\n\n---\n\n{texto}",
-                generation_config={"response_mime_type": "application/json"},
-                tools=[Noticia]
+                f"Analise o seguinte texto de uma notícia e extraia as informações no formato JSON, conforme o schema solicitado. Texto da notícia:\n\n---\n\n{texto_limitado}",
+                # A chave "response_mime_type" foi removida para evitar conflito com "tools"
+                generation_config={
+                    "max_output_tokens": 4096 
+                },
+                tools=[Noticia] # Este é o método correto e suficiente para obter o JSON estruturado
             )
             
-            noticia_processada = json.loads(response.text)
+            # O response.text pode não ser a forma correta de acessar o JSON quando se usa "tools"
+            # É mais seguro extrair a função chamada da resposta.
+            part = response.parts[0]
+            function_call = part.function_call
+            if function_call:
+                 noticia_processada = type(function_call).to_dict(function_call)
+                 # O gemini retorna o json aninhado, precisamos extrair os argumentos
+                 noticia_processada = noticia_processada.get('args', {})
+            else:
+                # Fallback caso a estrutura da resposta mude ou falhe
+                noticia_processada = json.loads(response.text)
+
             noticia_processada['link'] = links_originais[i]
             respostas_json.append(json.dumps(noticia_processada, ensure_ascii=False))
 
@@ -284,5 +304,6 @@ if st.button("Gerar Newsletter"):
             gerar_newsletter_streamlit(resumos_json)
         else:
             st.error(f"Nenhuma notícia encontrada para o termo '{termo_busca}' em nenhuma das fontes. Tente outro termo.")
+
 
 
