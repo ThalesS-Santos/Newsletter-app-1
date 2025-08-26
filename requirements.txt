@@ -1,7 +1,7 @@
-
-streamlit==1.37.0
-pandas==2.2.2
-requests==2.32.3
-newsdataapi==0.3.2
-google-generativeai==0.7.1
-pydantic==2.8.2
+# Depois (O jeito correto)
+streamlit
+pandas
+requests
+newsdataapi
+google-generativeai
+pydantic
