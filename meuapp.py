@@ -3,58 +3,132 @@ import pandas as pd
 import requests
 import json
 
+# --- BIBLIOTECAS ADICIONADAS ---
 try:
     from newsdataapi import NewsDataApiClient
     import google.generativeai as genai
     from pydantic import BaseModel, Field
     from typing import List
+    from serpapi import GoogleSearch
+    from newsapi import NewsApiClient 
+
 except ImportError as e:
     st.error(f"""
         Uma ou mais bibliotecas necessárias não foram encontradas.
         Por favor, instale-as executando o comando abaixo no seu terminal:
         
-        pip install streamlit pandas requests newsdataapi google-generativeai pydantic
+        pip install streamlit pandas requests newsdataapi google-generativeai pydantic serpapi-google-search newsapi-python
 
         Erro original: {e}
     """)
     st.stop()
-    
 
+# --- CHAVES DE API ATUALIZADAS ---
 try:
-    NEWS_API_KEY = st.secrets["NEWS_API_KEY"]
+    # Chaves existentes
+    NEWS_API_KEY = st.secrets["NEWS_API_KEY"] # Para NewsData.io
     JINA_API_KEY = st.secrets["JINA_API_KEY"]
     GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
+    # Novas chaves
+    SERPAPI_API_KEY = st.secrets["SERPAPI_API_KEY"]
+    NEWSAPI_ORG_KEY = st.secrets["NEWSAPI_ORG_KEY"]
 
     genai.configure(api_key=GEMINI_API_KEY)
 except (KeyError, FileNotFoundError):
-    st.error("Erro: As chaves de API não foram encontradas. Verifique seu arquivo .streamlit/secrets.toml.")
+    st.error("Erro: Uma ou mais chaves de API não foram encontradas. Verifique seu arquivo .streamlit/secrets.toml.")
     st.stop()
 
+# --- NOVAS FUNÇÕES DE BUSCA (ADAPTADAS DO SEU CÓDIGO) ---
+COLUNAS_FINAIS = ['title', 'link', 'source']
 
-
-@st.cache_data(ttl=3600) # Cache por 1 hora
-def pega_noticias(termo_busca, max_noticias=5):
-    """Busca notícias usando a NewsDataApiClient e retorna um DataFrame."""
+def buscar_newsdata(termo):
     try:
         api = NewsDataApiClient(apikey=NEWS_API_KEY)
-        response = api.latest_api(q=termo_busca, language='pt', country='br')
+        response = api.latest_api(q=termo, language='pt', country='br')
         resultados = response.get('results', [])
-        
-        if not resultados:
-            return pd.DataFrame()
-            
+        if not resultados: return pd.DataFrame(columns=COLUNAS_FINAIS)
         df = pd.DataFrame(resultados)
-        
-        colunas_mapeadas = {'title': 'title', 'link': 'link', 'pubDate': 'published'}
-        colunas_existentes = [col for col in colunas_mapeadas.keys() if col in df.columns]
-        df_final = df[colunas_existentes].rename(columns=colunas_mapeadas)
-        
-        return df_final.dropna(subset=['link']).head(max_noticias)
-
+        if 'title' in df.columns and 'link' in df.columns:
+            df['source'] = 'NewsData.io'
+            return df[COLUNAS_FINAIS]
+        return pd.DataFrame(columns=COLUNAS_FINAIS)
     except Exception as e:
-        st.error(f"Ocorreu um erro ao buscar notícias: {e}")
-        return pd.DataFrame()
+        st.warning(f"Erro ao buscar no NewsData.io: {e}")
+        return pd.DataFrame(columns=COLUNAS_FINAIS)
 
+def buscar_google_news(termo):
+    try:
+        params = {"q": termo, "tbm": "nws", "api_key": SERPAPI_API_KEY, "gl": "br", "hl": "pt-br"}
+        search = GoogleSearch(params)
+        results = search.get_dict()
+        noticias = results.get('news_results', [])
+        if not noticias: return pd.DataFrame(columns=COLUNAS_FINAIS)
+        df = pd.DataFrame(noticias)
+        if 'title' in df.columns and 'link' in df.columns:
+            df['source'] = 'Google News'
+            return df[COLUNAS_FINAIS]
+        return pd.DataFrame(columns=COLUNAS_FINAIS)
+    except Exception as e:
+        st.warning(f"Erro ao buscar no Google News: {e}")
+        return pd.DataFrame(columns=COLUNAS_FINAIS)
+
+def buscar_google_search(termo):
+    try:
+        params = {"q": termo, "api_key": SERPAPI_API_KEY, "gl": "br", "hl": "pt-br"}
+        search = GoogleSearch(params)
+        results = search.get_dict()
+        noticias = [res for res in results.get('organic_results', []) if 'title' in res and 'link' in res]
+        if not noticias: return pd.DataFrame(columns=COLUNAS_FINAIS)
+        df = pd.DataFrame(noticias)
+        if 'title' in df.columns and 'link' in df.columns:
+            df['source'] = 'Google Search'
+            return df[COLUNAS_FINAIS]
+        return pd.DataFrame(columns=COLUNAS_FINAIS)
+    except Exception as e:
+        st.warning(f"Erro ao buscar no Google Search: {e}")
+        return pd.DataFrame(columns=COLUNAS_FINAIS)
+
+def buscar_newsapi_org(termo):
+    try:
+        newsapi = NewsApiClient(api_key=NEWSAPI_ORG_KEY)
+        response = newsapi.get_everything(q=termo, language='pt', sort_by='relevancy')
+        noticias = response.get('articles', [])
+        if not noticias: return pd.DataFrame(columns=COLUNAS_FINAIS)
+        df = pd.DataFrame(noticias)
+        df.rename(columns={'url': 'link'}, inplace=True)
+        if 'title' in df.columns and 'link' in df.columns:
+            df['source'] = 'NewsAPI.org'
+            return df[COLUNAS_FINAIS]
+        return pd.DataFrame(columns=COLUNAS_FINAIS)
+    except Exception as e:
+        st.warning(f"Erro ao buscar no NewsAPI.org: {e}")
+        return pd.DataFrame(columns=COLUNAS_FINAIS)
+
+# --- FUNÇÃO PRINCIPAL DE BUSCA (MODIFICADA) ---
+@st.cache_data(ttl=3600)
+def pega_noticias(termo_busca, max_noticias=5):
+    """Busca notícias de múltiplas fontes, combina e remove duplicatas."""
+    with st.spinner("Buscando em NewsData.io, Google News, Google Search e NewsAPI.org..."):
+        lista_de_noticias_dfs = [
+            buscar_newsdata(termo_busca),
+            buscar_google_news(termo_busca),
+            buscar_google_search(termo_busca),
+            buscar_newsapi_org(termo_busca)
+        ]
+
+        todas_as_noticias = pd.concat(lista_de_noticias_dfs, ignore_index=True)
+        
+        if todas_as_noticias.empty:
+            return pd.DataFrame()
+
+        # Limpa e remove duplicatas baseadas no link
+        todas_as_noticias.dropna(subset=['link'], inplace=True)
+        noticias_unicas = todas_as_noticias.drop_duplicates(subset=['link'], keep='first')
+        
+        st.success(f"Busca concluída! {len(noticias_unicas)} notícias únicas encontradas (antes do limite).")
+        return noticias_unicas.head(max_noticias)
+
+# --- O RESTANTE DO CÓDIGO PERMANECE IGUAL ---
 @st.cache_data(ttl=3600)
 def extrair_conteudo_noticias(df_noticias):
     """Extrai o conteúdo completo dos artigos usando a Jina AI API."""
@@ -117,7 +191,6 @@ def processa_noticias_com_gemini(df_conteudos):
             response = model.generate_content(
                 f"Analise o seguinte texto de uma notícia e extraia as informações no formato JSON, conforme o schema solicitado. Texto da notícia:\n\n---\n\n{texto}",
                 generation_config={"response_mime_type": "application/json"},
-                # A API do Gemini usa `tools` para definir o schema de saída JSON
                 tools=[Noticia]
             )
             
@@ -141,7 +214,7 @@ def gerar_newsletter_streamlit(lista_json):
         st.info("Nenhuma notícia processada para exibir.")
         return
     
-    st.write(f"**Exibindo {len(lista_json)} notícias encontradas:**")
+    st.write(f"**Exibindo {len(lista_json)} notícias processadas:**")
 
     for i, noticia_str in enumerate(lista_json):
         try:
@@ -187,21 +260,20 @@ a:hover { text-decoration: underline; }
 """, unsafe_allow_html=True)
 
 st.title("📰 Gerador de Newsletter com IA")
-st.markdown("Digite um tema, clique em gerar e obtenha um resumo das últimas notícias, processado por Inteligência Artificial.")
+st.markdown("Digite um tema, clique em gerar e obtenha um resumo das últimas notícias de múltiplas fontes, processado por Inteligência Artificial.")
 
 termo_busca = st.text_input("Qual tema você quer pesquisar?",)
-max_noticias = st.number_input("Número máximo de notícias", min_value=1, max_value=10, value=5, help="Selecione o número de notícias para buscar e processar (máx. 10).")
+max_noticias = st.number_input("Número máximo de notícias para a newsletter", min_value=1, max_value=20, value=5, help="Selecione o número de notícias para processar e exibir (máx. 20).")
 
 
 if st.button("Gerar Newsletter"):
     if not termo_busca:
         st.warning("Por favor, digite um termo para a busca.")
     else:
-        with st.spinner("Buscando as notícias mais recentes... ⏳"):
-            df_noticias = pega_noticias(termo_busca, max_noticias)
+        df_noticias = pega_noticias(termo_busca, max_noticias)
 
         if not df_noticias.empty:
-            st.info(f"Encontradas {len(df_noticias)} notícias. Iniciando processamento...")
+            st.info(f"Iniciando processamento de {len(df_noticias)} notícias...")
             
             df_conteudos = extrair_conteudo_noticias(df_noticias)
             
@@ -211,4 +283,4 @@ if st.button("Gerar Newsletter"):
             st.markdown("---")
             gerar_newsletter_streamlit(resumos_json)
         else:
-            st.error(f"Nenhuma notícia encontrada para o termo '{termo_busca}'. Tente outro.")
+            st.error(f"Nenhuma notícia encontrada para o termo '{termo_busca}' em nenhuma das fontes. Tente outro termo.")
