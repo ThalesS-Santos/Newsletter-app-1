@@ -18,7 +18,7 @@ except ImportError as e:
         Erro original: {e}
     """)
     st.stop()
- 
+    
 
 try:
     NEWS_API_KEY = st.secrets["NEWS_API_KEY"]
@@ -33,7 +33,7 @@ except (KeyError, FileNotFoundError):
 
 
 @st.cache_data(ttl=3600) # Cache por 1 hora
-def pega_noticias(termo_busca):
+def pega_noticias(termo_busca, max_noticias=5):
     """Busca notícias usando a NewsDataApiClient e retorna um DataFrame."""
     try:
         api = NewsDataApiClient(apikey=NEWS_API_KEY)
@@ -49,7 +49,7 @@ def pega_noticias(termo_busca):
         colunas_existentes = [col for col in colunas_mapeadas.keys() if col in df.columns]
         df_final = df[colunas_existentes].rename(columns=colunas_mapeadas)
         
-        return df_final.dropna(subset=['link']).head(5)
+        return df_final.dropna(subset=['link']).head(max_noticias)
 
     except Exception as e:
         st.error(f"Ocorreu um erro ao buscar notícias: {e}")
@@ -64,7 +64,12 @@ def extrair_conteudo_noticias(df_noticias):
         "X-Engine": "browser"
     }
     
+    total_noticias = len(df_noticias)
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+
     for index, row in df_noticias.iterrows():
+        status_text.text(f"Extraindo notícia {index + 1}/{total_noticias}: {row['title'][:50]}...")
         url = f"https://r.jina.ai/{row['link']}"
         try:
             response = requests.get(url, headers=headers, timeout=20)
@@ -72,7 +77,10 @@ def extrair_conteudo_noticias(df_noticias):
             conteudos.append(response.text)
         except requests.exceptions.RequestException as e:
             conteudos.append(f"Erro ao buscar conteúdo para o título '{row['title']}': {e}")
-            
+        
+        progress_bar.progress((index + 1) / total_noticias)
+    
+    status_text.empty()
     return pd.DataFrame({
         'title': df_noticias['title'],
         'link': df_noticias['link'],
@@ -93,9 +101,15 @@ def processa_noticias_com_gemini(df_conteudos):
     respostas_json = []
     links_originais = df_conteudos['link'].tolist()
 
+    total_conteudos = len(df_conteudos)
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+
     for i, texto in enumerate(df_conteudos['content']):
+        status_text.text(f"Analisando com IA - Notícia {i + 1}/{total_conteudos}")
         if texto.startswith("Erro ao buscar conteúdo"):
             respostas_json.append(json.dumps({"titulo": "Conteúdo da notícia não disponível"}))
+            progress_bar.progress((i + 1) / total_conteudos)
             continue
         
         try:
@@ -114,7 +128,10 @@ def processa_noticias_com_gemini(df_conteudos):
         except Exception as e:
             st.warning(f"Erro ao processar notícia com Gemini: {e}")
             respostas_json.append(json.dumps({"titulo": "Conteúdo da notícia não disponível"}))
-            
+        
+        progress_bar.progress((i + 1) / total_conteudos)
+    
+    status_text.empty()
     return respostas_json
 
 
@@ -123,6 +140,8 @@ def gerar_newsletter_streamlit(lista_json):
     if not lista_json:
         st.info("Nenhuma notícia processada para exibir.")
         return
+    
+    st.write(f"**Exibindo {len(lista_json)} notícias encontradas:**")
 
     for i, noticia_str in enumerate(lista_json):
         try:
@@ -171,20 +190,22 @@ st.title("📰 Gerador de Newsletter com IA")
 st.markdown("Digite um tema, clique em gerar e obtenha um resumo das últimas notícias, processado por Inteligência Artificial.")
 
 termo_busca = st.text_input("Qual tema você quer pesquisar?",)
+max_noticias = st.number_input("Número máximo de notícias", min_value=1, max_value=10, value=5, help="Selecione o número de notícias para buscar e processar (máx. 10).")
+
 
 if st.button("Gerar Newsletter"):
     if not termo_busca:
         st.warning("Por favor, digite um termo para a busca.")
     else:
         with st.spinner("Buscando as notícias mais recentes... ⏳"):
-            df_noticias = pega_noticias(termo_busca)
+            df_noticias = pega_noticias(termo_busca, max_noticias)
 
         if not df_noticias.empty:
-            with st.spinner("Extraindo o conteúdo completo dos artigos... 📄"):
-                df_conteudos = extrair_conteudo_noticias(df_noticias)
+            st.info(f"Encontradas {len(df_noticias)} notícias. Iniciando processamento...")
             
-            with st.spinner("A mágica da IA está acontecendo... Gerando resumos... ✨"):
-                resumos_json = processa_noticias_com_gemini(df_conteudos)
+            df_conteudos = extrair_conteudo_noticias(df_noticias)
+            
+            resumos_json = processa_noticias_com_gemini(df_conteudos)
             
             st.success("Newsletter gerada com sucesso!")
             st.markdown("---")
