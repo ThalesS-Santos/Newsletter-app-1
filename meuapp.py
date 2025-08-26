@@ -187,7 +187,7 @@ def processa_noticias_com_gemini(df_conteudos):
             continue
         
         try:
-            model = genai.GenerativeModel(model_name="gemini-2.5-flash")
+            model = genai.GenerativeModel(model_name="gemini-2.5-flash-lite")
             response = model.generate_content(
                 f"Analise o seguinte texto de uma notícia e extraia as informações no formato JSON, conforme o schema solicitado. Texto da notícia:\n\n---\n\n{texto}",
                 generation_config={"response_mime_type": "application/json"},
@@ -284,4 +284,5 @@ if st.button("Gerar Newsletter"):
             gerar_newsletter_streamlit(resumos_json)
         else:
             st.error(f"Nenhuma notícia encontrada para o termo '{termo_busca}' em nenhuma das fontes. Tente outro termo.")
+
 
