@@ -4,5 +4,5 @@ requests
 newsdataapi
 google-generativeai
 pydantic
-serpapi-google-search
+google-search-results
 newsapi-python
