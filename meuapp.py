@@ -10,13 +10,13 @@ try:
     from pydantic import BaseModel, Field
     from typing import List
     from serpapi import GoogleSearch
-    from newsapi import NewsApiClient 
+    from newsapi import NewsApiClient
 
 except ImportError as e:
     st.error(f"""
         Uma ou mais bibliotecas necessárias não foram encontradas.
         Por favor, instale-as executando o comando abaixo no seu terminal:
-        
+
         pip install streamlit pandas requests newsdataapi google-generativeai pydantic serpapi-google-search newsapi-python
 
         Erro original: {e}
@@ -38,7 +38,7 @@ except (KeyError, FileNotFoundError):
     st.error("Erro: Uma ou mais chaves de API não foram encontradas. Verifique seu arquivo .streamlit/secrets.toml.")
     st.stop()
 
-# --- NOVAS FUNÇÕES DE BUSCA (ADAPTADAS DO SEU CÓDIGO) ---
+# --- NOVAS FUNÇÕES DE BUSCA ---
 COLUNAS_FINAIS = ['title', 'link', 'source']
 
 def buscar_newsdata(termo):
@@ -104,7 +104,7 @@ def buscar_newsapi_org(termo):
         st.warning(f"Erro ao buscar no NewsAPI.org: {e}")
         return pd.DataFrame(columns=COLUNAS_FINAIS)
 
-# --- FUNÇÃO PRINCIPAL DE BUSCA (MODIFICADA) ---
+# --- FUNÇÃO PRINCIPAL DE BUSCA ---
 @st.cache_data(ttl=3600)
 def pega_noticias(termo_busca, max_noticias=5):
     """Busca notícias de múltiplas fontes, combina e remove duplicatas."""
@@ -121,14 +121,13 @@ def pega_noticias(termo_busca, max_noticias=5):
         if todas_as_noticias.empty:
             return pd.DataFrame()
 
-        # Limpa e remove duplicatas baseadas no link
         todas_as_noticias.dropna(subset=['link'], inplace=True)
         noticias_unicas = todas_as_noticias.drop_duplicates(subset=['link'], keep='first')
         
         st.success(f"Busca concluída! {len(noticias_unicas)} notícias únicas encontradas (antes do limite).")
         return noticias_unicas.head(max_noticias)
 
-# --- O RESTANTE DO CÓDIGO PERMANECE IGUAL ---
+# --- FUNÇÕES DE PROCESSAMENTO ---
 @st.cache_data(ttl=3600)
 def extrair_conteudo_noticias(df_noticias):
     """Extrai o conteúdo completo dos artigos usando a Jina AI API."""
@@ -161,10 +160,12 @@ def extrair_conteudo_noticias(df_noticias):
         'content': conteudos
     })
 
+# --- NOVA FUNÇÃO processa_noticias_com_gemini (JÁ INTEGRADA) ---
 @st.cache_data(ttl=3600)
 def processa_noticias_com_gemini(df_conteudos):
     """Processa o conteúdo das notícias com a API do Gemini para extrair e estruturar dados."""
-    
+
+    # Nota: A classe Noticia não é mais usada na chamada da API, mas serve como documentação.
     class Noticia(BaseModel):
         titulo: str = Field(..., description="O título da notícia.")
         data_de_publicacao: str = Field(..., description="A data em que a notícia foi publicada (se disponível).")
@@ -176,38 +177,50 @@ def processa_noticias_com_gemini(df_conteudos):
     links_originais = df_conteudos['link'].tolist()
 
     total_conteudos = len(df_conteudos)
-    progress_bar = st.progress(0)
-    status_text = st.empty()
+    
+    # Os elementos visuais do Streamlit foram removidos desta função.
+    # O progresso será impresso no terminal.
 
     for i, texto in enumerate(df_conteudos['content']):
-        status_text.text(f"Analisando com IA - Notícia {i + 1}/{total_conteudos}")
+        print(f"Analisando com IA - Notícia {i + 1}/{total_conteudos}")
         if texto.startswith("Erro ao buscar conteúdo"):
             respostas_json.append(json.dumps({"titulo": "Conteúdo da notícia não disponível"}))
-            progress_bar.progress((i + 1) / total_conteudos)
             continue
-        
+
         try:
-            model = genai.GenerativeModel(model_name="gemini-2.5-flash-lite")
-            response = model.generate_content(
-                f"Analise o seguinte texto de uma notícia e extraia as informações no formato JSON, conforme o schema solicitado. Texto da notícia:\n\n---\n\n{texto}",
-                generation_config={"response_mime_type": "application/json"},
-                tools=[Noticia]
-            )
+            # Recomendo usar um nome de modelo válido, como 'gemini-1.5-flash-latest'
+            model = genai.GenerativeModel(model_name="gemini-1.5-flash-latest")
             
+            response = model.generate_content(
+                f"""
+                Analise o seguinte texto de uma notícia e extraia as informações no formato JSON.
+                O JSON deve seguir a seguinte estrutura:
+                {{
+                    "titulo": "O título da notícia.",
+                    "data_de_publicacao": "A data em que a notícia foi publicada (se disponível).",
+                    "resumo_curto": "Um resumo conciso da notícia em até 30 palavras.",
+                    "resumo_maior": "Um resumo mais detalhado da notícia em até 150 palavras.",
+                    "links_de_imagens": ["Uma lista contendo até 2 URLs das imagens mais relevantes da notícia. Se não houver, retorne uma lista vazia."]
+                }}
+
+                Texto da notícia:
+                ---
+                {texto}
+                """,
+                generation_config={"response_mime_type": "application/json"}
+            )
+
             noticia_processada = json.loads(response.text)
             noticia_processada['link'] = links_originais[i]
             respostas_json.append(json.dumps(noticia_processada, ensure_ascii=False))
 
         except Exception as e:
-            st.warning(f"Erro ao processar notícia com Gemini: {e}")
+            print(f"Erro ao processar notícia com Gemini: {e}")
             respostas_json.append(json.dumps({"titulo": "Conteúdo da notícia não disponível"}))
-        
-        progress_bar.progress((i + 1) / total_conteudos)
-    
-    status_text.empty()
+
     return respostas_json
 
-
+# --- FUNÇÃO DE RENDERIZAÇÃO ---
 def gerar_newsletter_streamlit(lista_json):
     """Renderiza a newsletter na interface do Streamlit."""
     if not lista_json:
@@ -246,8 +259,7 @@ def gerar_newsletter_streamlit(lista_json):
                 st.markdown(f'<a href="{link}" target="_blank">Notícia completa ↗</a>', unsafe_allow_html=True)
         st.markdown("<br>", unsafe_allow_html=True)
 
-
-
+# --- INTERFACE PRINCIPAL DO STREAMLIT ---
 st.set_page_config(page_title="Gerador de Newsletter com IA", layout="centered")
 
 st.markdown("""
@@ -265,7 +277,6 @@ st.markdown("Digite um tema, clique em gerar e obtenha um resumo das últimas no
 termo_busca = st.text_input("Qual tema você quer pesquisar?",)
 max_noticias = st.number_input("Número máximo de notícias para a newsletter", min_value=1, max_value=20, value=5, help="Selecione o número de notícias para processar e exibir (máx. 20).")
 
-
 if st.button("Gerar Newsletter"):
     if not termo_busca:
         st.warning("Por favor, digite um termo para a busca.")
@@ -277,14 +288,12 @@ if st.button("Gerar Newsletter"):
             
             df_conteudos = extrair_conteudo_noticias(df_noticias)
             
-            resumos_json = processa_noticias_com_gemini(df_conteudos)
+            # Adicionando um spinner para a etapa de processamento com IA
+            with st.spinner("A Inteligência Artificial está analisando as notícias... (verifique o terminal para progresso detalhado)"):
+                resumos_json = processa_noticias_com_gemini(df_conteudos)
             
             st.success("Newsletter gerada com sucesso!")
             st.markdown("---")
             gerar_newsletter_streamlit(resumos_json)
         else:
             st.error(f"Nenhuma notícia encontrada para o termo '{termo_busca}' em nenhuma das fontes. Tente outro termo.")
-
-
-
-
