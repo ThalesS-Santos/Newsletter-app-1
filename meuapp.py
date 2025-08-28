@@ -18,7 +18,7 @@ except ImportError as e:
         Uma ou mais bibliotecas necessárias não foram encontradas.
         Por favor, instale-as executando o comando abaixo no seu terminal:
         
-        pip install streamlit pandas requests newsdataapi google-generativeai pydantic serpapi-google-search newsapi-python
+        pip install streamlit pandas requests newsdataapi google-generativeai pydantic google-search-results newsapi-python
 
         Erro original: {e}
     """)
@@ -42,6 +42,7 @@ except (KeyError, FileNotFoundError):
 # --- NOVAS FUNÇÕES DE BUSCA (ADAPTADAS DO SEU CÓDIGO) ---
 COLUNAS_FINAIS = ['title', 'link', 'source']
 
+@st.cache_data(ttl=3600)
 def buscar_newsdata(termo):
     try:
         api = NewsDataApiClient(apikey=NEWS_API_KEY)
@@ -57,6 +58,7 @@ def buscar_newsdata(termo):
         st.warning(f"Erro ao buscar no NewsData.io: {e}")
         return pd.DataFrame(columns=COLUNAS_FINAIS)
 
+@st.cache_data(ttl=3600)
 def buscar_google_news(termo):
     try:
         params = {"q": termo, "tbm": "nws", "api_key": SERPAPI_API_KEY, "gl": "br", "hl": "pt-br"}
@@ -73,6 +75,7 @@ def buscar_google_news(termo):
         st.warning(f"Erro ao buscar no Google News: {e}")
         return pd.DataFrame(columns=COLUNAS_FINAIS)
 
+@st.cache_data(ttl=3600)
 def buscar_google_search(termo):
     try:
         params = {"q": termo, "api_key": SERPAPI_API_KEY, "gl": "br", "hl": "pt-br"}
@@ -89,6 +92,7 @@ def buscar_google_search(termo):
         st.warning(f"Erro ao buscar no Google Search: {e}")
         return pd.DataFrame(columns=COLUNAS_FINAIS)
 
+@st.cache_data(ttl=3600)
 def buscar_newsapi_org(termo):
     try:
         newsapi = NewsApiClient(api_key=NEWSAPI_ORG_KEY)
@@ -110,12 +114,13 @@ def buscar_newsapi_org(termo):
 def pega_noticias(termo_busca, max_noticias=5):
     """Busca notícias de múltiplas fontes, combina e remove duplicatas."""
     with st.spinner("Buscando em NewsData.io, Google News, Google Search e NewsAPI.org..."):
-        lista_de_noticias_dfs = [
-            buscar_newsdata(termo_busca),
-            buscar_google_news(termo_busca),
-            buscar_google_search(termo_busca),
-            buscar_newsapi_org(termo_busca)
+        fontes = [
+            buscar_newsdata, 
+            buscar_google_news, 
+            buscar_google_search, 
+            buscar_newsapi_org
         ]
+        lista_de_noticias_dfs = [func(termo_busca) for func in fontes]
 
         todas_as_noticias = pd.concat(lista_de_noticias_dfs, ignore_index=True)
         
@@ -129,7 +134,7 @@ def pega_noticias(termo_busca, max_noticias=5):
         st.success(f"Busca concluída! {len(noticias_unicas)} notícias únicas encontradas (antes do limite).")
         return noticias_unicas.head(max_noticias)
 
-# --- O RESTANTE DO CÓDIGO PERMANECE IGUAL ---
+# --- FUNÇÃO DE EXTRAÇÃO DE CONTEÚDO ---
 @st.cache_data(ttl=3600)
 def extrair_conteudo_noticias(df_noticias):
     """Extrai o conteúdo completo dos artigos usando a Jina AI API."""
@@ -162,6 +167,7 @@ def extrair_conteudo_noticias(df_noticias):
         'content': conteudos
     })
     
+# --- FUNÇÃO DE PROCESSAMENTO COM GEMINI (VERSÃO MODIFICADA) ---
 @st.cache_data(ttl=3600)
 def processa_noticias_com_gemini(df_conteudos):
     """Processa o conteúdo das notícias com a API do Gemini para extrair e estruturar dados."""
@@ -180,7 +186,6 @@ def processa_noticias_com_gemini(df_conteudos):
     progress_bar = st.progress(0)
     status_text = st.empty()
 
-    # --- MUDANÇA 1: DEFINIÇÃO DAS CONFIGURAÇÕES DE SEGURANÇA ---
     safety_settings = {
         HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
         HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
@@ -190,39 +195,40 @@ def processa_noticias_com_gemini(df_conteudos):
 
     for i, texto in enumerate(df_conteudos['content']):
         status_text.text(f"Analisando com IA - Notícia {i + 1}/{total_conteudos}")
-        if texto.startswith("Erro ao buscar conteúdo"):
-            respostas_json.append(json.dumps({"titulo": "Conteúdo da notícia não disponível"}))
-            progress_bar.progress((i + 1) / total_conteudos)
-            continue
         
         try:
-            texto_limitado = texto[:20000]
-            if not texto_limitado.strip(): # Pula se o conteúdo extraído for vazio
-                respostas_json.append(json.dumps({"titulo": "Conteúdo da notícia vazio"}))
-                progress_bar.progress((i + 1) / total_conteudos)
-                continue
+            if texto.startswith("Erro ao buscar conteúdo"):
+                raise ValueError("Conteúdo da notícia não pôde ser extraído.")
 
-            model = genai.GenerativeModel(model_name="gemini-1.5-flash")
+            # Verifica se o texto está vazio após a extração
+            if not texto.strip():
+                raise ValueError("Conteúdo da notícia está vazio após extração.")
+
+            # MUDANÇA 1: Modelo alterado conforme solicitado
+            model = genai.GenerativeModel(model_name="gemini-2.5-flash-lite")
             
             response = model.generate_content(
-                f"Analise o seguinte texto de uma notícia e extraia as informações no formato JSON, conforme o schema solicitado. Texto da notícia:\n\n---\n\n{texto_limitado}",
-                generation_config={"max_output_tokens": 4096},
+                # MUDANÇA 2: Usa o texto completo, sem limite de caracteres
+                f"Analise o seguinte texto de uma notícia e extraia as informações no formato JSON, conforme o schema solicitado. Texto da notícia:\n\n---\n\n{texto}",
+                # MUDANÇA 3: Limitador de tokens de saída removido
+                generation_config={},
                 tools=[Noticia],
-                # --- MUDANÇA 2: APLICAÇÃO DAS CONFIGURAÇÕES DE SEGURANÇA ---
                 safety_settings=safety_settings 
             )
             
-            # --- MUDANÇA 3: VERIFICAÇÃO DE RESPOSTA VAZIA (BLOQUEADA) ---
-            if not response.parts:
-                raise ValueError("A resposta da API foi bloqueada ou retornou vazia (possivelmente devido a filtros de segurança).")
+            noticia_processada = None
 
-            part = response.parts[0]
-            function_call = part.function_call
-            if function_call:
-                 noticia_processada = type(function_call).to_dict(function_call)
-                 noticia_processada = noticia_processada.get('args', {})
-            else:
-                noticia_processada = json.loads(response.text)
+            if response.parts:
+                part = response.parts[0]
+                if part.function_call:
+                    function_call = part.function_call
+                    noticia_processada = type(function_call).to_dict(function_call).get('args', {})
+
+            if not noticia_processada:
+                block_reason = "Não especificado"
+                if hasattr(response, 'prompt_feedback') and hasattr(response.prompt_feedback, 'block_reason'):
+                    block_reason = response.prompt_feedback.block_reason
+                raise ValueError(f"A API não retornou dados estruturados. Motivo provável: {block_reason}")
 
             noticia_processada['link'] = links_originais[i]
             respostas_json.append(json.dumps(noticia_processada, ensure_ascii=False))
@@ -235,24 +241,24 @@ def processa_noticias_com_gemini(df_conteudos):
     
     status_text.empty()
     return respostas_json
-    
+
+# --- FUNÇÃO PARA EXIBIR A NEWSLETTER ---
 def gerar_newsletter_streamlit(lista_json):
     """Renderiza a newsletter na interface do Streamlit."""
-    if not lista_json:
-        st.info("Nenhuma notícia processada para exibir.")
-        return
-    
     st.write(f"**Exibindo {len(lista_json)} notícias processadas:**")
 
     for i, noticia_str in enumerate(lista_json):
         try:
             noticia = json.loads(noticia_str)
-            if not noticia or noticia.get("titulo") == "Conteúdo da notícia não disponível":
-                continue
         except (json.JSONDecodeError, AttributeError):
             continue
 
         titulo = noticia.get("titulo", "Título não encontrado")
+        
+        # Pula as notícias que falharam no processamento
+        if titulo == "Conteúdo da notícia não disponível":
+            continue
+
         data = noticia.get("data_de_publicacao", "Data não informada")
         resumo_curto = noticia.get("resumo_curto", "")
         resumo_maior = noticia.get("resumo_maior", "")
@@ -260,10 +266,14 @@ def gerar_newsletter_streamlit(lista_json):
         imagens = noticia.get("links_de_imagens", [])
         imagem = imagens[0] if imagens else "https://via.placeholder.com/400x267?text=Sem+Imagem"
 
-        with st.container():
+        with st.container(border=True):
             col_img, col_content = st.columns([1, 4])
             with col_img:
-                st.image(imagem, use_container_width='always')
+                try:
+                    st.image(imagem, use_container_width='always')
+                except Exception:
+                    st.image("https://via.placeholder.com/400x267?text=Imagem+Indispon%C3%ADvel", use_container_width='always')
+
             with col_content:
                 st.subheader(titulo)
                 st.caption(f"Publicado em: {data}")
@@ -274,25 +284,14 @@ def gerar_newsletter_streamlit(lista_json):
                 st.markdown(f'<a href="{link}" target="_blank">Notícia completa ↗</a>', unsafe_allow_html=True)
         st.markdown("<br>", unsafe_allow_html=True)
 
-
-
+# --- INTERFACE PRINCIPAL DO STREAMLIT ---
 st.set_page_config(page_title="Gerador de Newsletter com IA", layout="centered")
-
-st.markdown("""
-<style>
-.st-emotion-cache-1r4qj8v { border: 1px solid #e6e6e6; border-radius: 10px; padding: 1rem 1rem 1rem 1.5rem; margin-bottom: 1rem; box-shadow: 0 2px 6px rgba(0,0,0,0.04); }
-.st-emotion-cache-1r4qj8v:hover { transform: translateY(-4px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
-a { color: #0a9396 !important; font-weight: 500; text-decoration: none; }
-a:hover { text-decoration: underline; }
-</style>
-""", unsafe_allow_html=True)
 
 st.title("📰 Gerador de Newsletter com IA")
 st.markdown("Digite um tema, clique em gerar e obtenha um resumo das últimas notícias de múltiplas fontes, processado por Inteligência Artificial.")
 
-termo_busca = st.text_input("Qual tema você quer pesquisar?",)
+termo_busca = st.text_input("Qual tema você quer pesquisar?", placeholder="Ex: Tecnologia no Brasil")
 max_noticias = st.number_input("Número máximo de notícias para a newsletter", min_value=1, max_value=20, value=5, help="Selecione o número de notícias para processar e exibir (máx. 20).")
-
 
 if st.button("Gerar Newsletter"):
     if not termo_busca:
@@ -307,14 +306,17 @@ if st.button("Gerar Newsletter"):
             
             resumos_json = processa_noticias_com_gemini(df_conteudos)
             
-            st.success("Newsletter gerada com sucesso!")
-            st.markdown("---")
-            gerar_newsletter_streamlit(resumos_json)
+            # Verifica se há pelo menos uma notícia válida antes de mostrar sucesso.
+            noticias_validas = [
+                n for n in resumos_json 
+                if json.loads(n).get("titulo") not in [None, "Conteúdo da notícia não disponível", "Conteúdo da notícia vazio"]
+            ]
+
+            if noticias_validas:
+                st.success("Newsletter gerada com sucesso!")
+                st.markdown("---")
+                gerar_newsletter_streamlit(noticias_validas) 
+            else:
+                st.error("A IA não conseguiu processar o conteúdo de nenhuma das notícias encontradas. Tente um termo de busca diferente ou aguarde alguns minutos.")
         else:
             st.error(f"Nenhuma notícia encontrada para o termo '{termo_busca}' em nenhuma das fontes. Tente outro termo.")
-
-
-
-
-
-
