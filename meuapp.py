@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import requests
 import json
+from google.generativeai.types import HarmCategory, HarmBlockThreshold
 
 # --- BIBLIOTECAS ADICIONADAS ---
 try:
@@ -179,6 +180,14 @@ def processa_noticias_com_gemini(df_conteudos):
     progress_bar = st.progress(0)
     status_text = st.empty()
 
+    # --- MUDANÇA 1: DEFINIÇÃO DAS CONFIGURAÇÕES DE SEGURANÇA ---
+    safety_settings = {
+        HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+        HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+        HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+        HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+    }
+
     for i, texto in enumerate(df_conteudos['content']):
         status_text.text(f"Analisando com IA - Notícia {i + 1}/{total_conteudos}")
         if texto.startswith("Erro ao buscar conteúdo"):
@@ -188,26 +197,31 @@ def processa_noticias_com_gemini(df_conteudos):
         
         try:
             texto_limitado = texto[:20000]
+            if not texto_limitado.strip(): # Pula se o conteúdo extraído for vazio
+                respostas_json.append(json.dumps({"titulo": "Conteúdo da notícia vazio"}))
+                progress_bar.progress((i + 1) / total_conteudos)
+                continue
 
             model = genai.GenerativeModel(model_name="gemini-1.5-flash")
             
             response = model.generate_content(
                 f"Analise o seguinte texto de uma notícia e extraia as informações no formato JSON, conforme o schema solicitado. Texto da notícia:\n\n---\n\n{texto_limitado}",
-                # A chave "response_mime_type" foi removida para evitar o conflito
-                generation_config={
-                    "max_output_tokens": 4096 
-                },
-                tools=[Noticia] # Este é o método correto para obter o JSON estruturado
+                generation_config={"max_output_tokens": 4096},
+                tools=[Noticia],
+                # --- MUDANÇA 2: APLICAÇÃO DAS CONFIGURAÇÕES DE SEGURANÇA ---
+                safety_settings=safety_settings 
             )
             
-            # Extração segura da resposta quando se usa "tools"
+            # --- MUDANÇA 3: VERIFICAÇÃO DE RESPOSTA VAZIA (BLOQUEADA) ---
+            if not response.parts:
+                raise ValueError("A resposta da API foi bloqueada ou retornou vazia (possivelmente devido a filtros de segurança).")
+
             part = response.parts[0]
             function_call = part.function_call
             if function_call:
                  noticia_processada = type(function_call).to_dict(function_call)
                  noticia_processada = noticia_processada.get('args', {})
             else:
-                # Fallback caso a estrutura da resposta mude
                 noticia_processada = json.loads(response.text)
 
             noticia_processada['link'] = links_originais[i]
@@ -298,6 +312,7 @@ if st.button("Gerar Newsletter"):
             gerar_newsletter_streamlit(resumos_json)
         else:
             st.error(f"Nenhuma notícia encontrada para o termo '{termo_busca}' em nenhuma das fontes. Tente outro termo.")
+
 
 
 
