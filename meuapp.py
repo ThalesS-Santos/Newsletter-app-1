@@ -205,7 +205,7 @@ def processa_noticias_com_gemini(df_conteudos):
                 raise ValueError("Conteúdo da notícia está vazio após extração.")
 
             # MUDANÇA 1: Modelo alterado conforme solicitado
-            model = genai.GenerativeModel(model_name="gemini-2.5-flash-lite")
+            model = genai.GenerativeModel(model_name="gemini-2.5-flash")
             
             response = model.generate_content(
                 # MUDANÇA 2: Usa o texto completo, sem limite de caracteres
@@ -320,3 +320,4 @@ if st.button("Gerar Newsletter"):
                 st.error("A IA não conseguiu processar o conteúdo de nenhuma das notícias encontradas. Tente um termo de busca diferente ou aguarde alguns minutos.")
         else:
             st.error(f"Nenhuma notícia encontrada para o termo '{termo_busca}' em nenhuma das fontes. Tente outro termo.")
+
