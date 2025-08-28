@@ -3,9 +3,11 @@ import pandas as pd
 import requests
 import json
 import concurrent.futures
+from google.generativeai.types import HarmCategory, HarmBlockThreshold
 
 # --- BIBLIOTECAS ADICIONADAS ---
 try:
+    from bs4 import BeautifulSoup
     from newsdataapi import NewsDataApiClient
     import google.generativeai as genai
     from pydantic import BaseModel, Field
@@ -18,7 +20,7 @@ except ImportError as e:
         Uma ou mais bibliotecas necessárias não foram encontradas.
         Por favor, instale-as executando o comando abaixo no seu terminal:
         
-        pip install streamlit pandas requests newsdataapi google-generativeai pydantic google-search-results newsapi-python
+        pip install streamlit pandas requests beautifulsoup4 newsdataapi google-generativeai pydantic google-search-results newsapi-python
 
         Erro original: {e}
     """)
@@ -28,11 +30,11 @@ except ImportError as e:
 try:
     # Chaves existentes
     NEWS_API_KEY = st.secrets["NEWS_API_KEY"] # Para NewsData.io
-    JINA_API_KEY = st.secrets["JINA_API_KEY"]
     GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
     # Novas chaves
     SERPAPI_API_KEY = st.secrets["SERPAPI_API_KEY"]
     NEWSAPI_ORG_KEY = st.secrets["NEWSAPI_ORG_KEY"]
+    # JINA_API_KEY não é mais necessária
 
     genai.configure(api_key=GEMINI_API_KEY)
 except (KeyError, FileNotFoundError):
@@ -44,6 +46,7 @@ COLUNAS_FINAIS = ['title', 'link', 'source']
 
 @st.cache_data(ttl=3600)
 def buscar_newsdata(termo):
+    # (O código desta função e das outras 3 de busca não muda)
     try:
         api = NewsDataApiClient(apikey=NEWS_API_KEY)
         response = api.latest_api(q=termo, language='pt', country='br')
@@ -140,14 +143,13 @@ def pega_noticias(termo_busca, max_noticias=5):
         st.success(f"Busca concluída! {len(noticias_unicas)} notícias únicas encontradas (antes do limite).")
         return noticias_unicas.head(max_noticias)
 
-# --- FUNÇÃO DE EXTRAÇÃO DE CONTEÚDO ---
+# --- FUNÇÃO DE EXTRAÇÃO DE CONTEÚDO (NOVA VERSÃO COM BEAUTIFULSOUP) ---
 @st.cache_data(ttl=3600)
 def extrair_conteudo_noticias(df_noticias):
-    """Extrai o conteúdo completo dos artigos usando a Jina AI API."""
+    """Extrai o conteúdo principal dos artigos usando requests e BeautifulSoup."""
     conteudos = []
     headers = {
-        "Authorization": f"Bearer {JINA_API_KEY}",
-        "X-Engine": "browser"
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
     }
     
     total_noticias = len(df_noticias)
@@ -155,14 +157,42 @@ def extrair_conteudo_noticias(df_noticias):
     status_text = st.empty()
 
     for index, row in df_noticias.iterrows():
-        status_text.text(f"Extraindo notícia {index + 1}/{total_noticias}: {row['title'][:50]}...")
-        url = f"https://r.jina.ai/{row['link']}"
+        link = row['link']
+        titulo_noticia = row['title']
+        status_text.text(f"Extraindo notícia {index + 1}/{total_noticias}: {titulo_noticia[:50]}...")
+        
         try:
-            response = requests.get(url, headers=headers, timeout=20)
+            response = requests.get(link, headers=headers, timeout=20)
             response.raise_for_status()
-            conteudos.append(response.text)
+
+            soup = BeautifulSoup(response.text, 'html.parser')
+
+            article = soup.find('article')
+            if not article:
+                article = soup.find('div', class_=lambda x: x and 'post' in x.lower())
+            if not article:
+                article = soup.find('div', class_=lambda x: x and 'content' in x.lower())
+            if not article:
+                 article = soup.find('div', id=lambda x: x and 'content' in x.lower())
+
+            target_element = article if article else soup
+            
+            paragraphs = target_element.find_all('p')
+            
+            if not paragraphs:
+                full_text = target_element.get_text(separator='\n', strip=True)
+            else:
+                full_text = '\n\n'.join([p.get_text().strip() for p in paragraphs])
+
+            if full_text:
+                conteudos.append(full_text)
+            else:
+                conteudos.append(f"Erro ao buscar conteúdo para o título '{titulo_noticia}': O conteúdo extraído estava vazio.")
+
         except requests.exceptions.RequestException as e:
-            conteudos.append(f"Erro ao buscar conteúdo para o título '{row['title']}': {e}")
+            conteudos.append(f"Erro ao buscar conteúdo para o título '{titulo_noticia}': Falha na conexão - {e}")
+        except Exception as e:
+            conteudos.append(f"Erro ao buscar conteúdo para o título '{titulo_noticia}': Erro inesperado - {e}")
         
         progress_bar.progress((index + 1) / total_noticias)
     
@@ -173,7 +203,7 @@ def extrair_conteudo_noticias(df_noticias):
         'content': conteudos
     })
     
-# --- FUNÇÃO DE PROCESSAMENTO COM GEMINI ---
+# --- FUNÇÃO DE PROCESSAMENTO COM GEMINI (VERSÃO ROBUSTA) ---
 @st.cache_data(ttl=3600)
 def processa_noticias_com_gemini(df_conteudos):
     """Processa o conteúdo das notícias com a API do Gemini para extrair e estruturar dados."""
@@ -192,6 +222,13 @@ def processa_noticias_com_gemini(df_conteudos):
     progress_bar = st.progress(0)
     status_text = st.empty()
 
+    safety_settings = {
+        HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+        HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+        HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+        HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+    }
+
     for i, texto in enumerate(df_conteudos['content']):
         status_text.text(f"Analisando com IA - Notícia {i + 1}/{total_conteudos}")
         
@@ -208,7 +245,8 @@ def processa_noticias_com_gemini(df_conteudos):
             response = model.generate_content(
                 f"Analise o seguinte texto de uma notícia e extraia as informações no formato JSON, conforme o schema solicitado. Texto da notícia:\n\n---\n\n{texto_limitado}",
                 generation_config={},
-                tools=[Noticia]
+                tools=[Noticia],
+                safety_settings=safety_settings 
             )
             
             noticia_processada = None
