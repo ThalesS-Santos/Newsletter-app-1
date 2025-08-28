@@ -169,8 +169,8 @@ def processa_noticias_com_gemini(df_conteudos):
     class Noticia(BaseModel):
         titulo: str = Field(..., description="O título da notícia.")
         data_de_publicacao: str = Field(..., description="A data em que a notícia foi publicada (se disponível).")
-        resumo_curto: str = Field(..., description="Um resumo conciso da notícia em até 30 palavras.")
-        resumo_maior: str = Field(..., description="Um resumo mais detalhado da notícia em até 150 palavras.")
+        resumo_curto: str = Field(..., description="Um resumo conciso da notícia, apensa com o assunto principal da noticia, não precisa enrolar muito, apenas o basico para um usuario entender do que se trata a noticia, em até 30 palavras.")
+        resumo_maior: str = Field(..., description="Um resumo mais detalhado da notícia, apenas com as informações mais relevantes da noticia e algumas observações a mais, em até 150 palavras.")
         links_de_imagens: List[str] = Field(..., description="Uma lista contendo até 2 URLs das imagens mais relevantes da notícia. Se não houver, retorne uma lista vazia.")
 
     respostas_json = []
@@ -248,7 +248,8 @@ def gerar_newsletter_streamlit(lista_json):
         with st.container():
             col_img, col_content = st.columns([1, 4])
             with col_img:
-                st.image(imagem, use_container_width='always')
+                # --- LINHA ALTERADA ---
+                st.image(imagem, width='stretch')
             with col_content:
                 st.subheader(titulo)
                 st.caption(f"Publicado em: {data}")
