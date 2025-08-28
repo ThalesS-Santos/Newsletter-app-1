@@ -6,3 +6,4 @@ google-generativeai
 pydantic
 google-search-results
 newsapi-python
+beautifulsoup4
