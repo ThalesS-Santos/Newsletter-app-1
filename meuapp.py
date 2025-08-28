@@ -121,17 +121,9 @@ def pega_noticias(termo_busca, max_noticias=5):
         if todas_as_noticias.empty:
             return pd.DataFrame()
 
-        # --- MODIFICAÇÃO ADICIONADA ---
-        print(f"Total de notícias encontradas (com duplicatas): {len(todas_as_noticias)}")
-        # --------------------------------
-
         todas_as_noticias.dropna(subset=['link'], inplace=True)
         noticias_unicas = todas_as_noticias.drop_duplicates(subset=['link'], keep='first')
-        
-        # --- MODIFICAÇÃO ADICIONADA ---
-        print(f"Total de notícias ÚNICAS após a limpeza: {len(noticias_unicas)}")
-        # --------------------------------
-        
+    
         st.success(f"Busca concluída! {len(noticias_unicas)} notícias únicas encontradas (antes do limite).")
         return noticias_unicas.head(max_noticias)
 
