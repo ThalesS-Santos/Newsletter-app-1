@@ -104,7 +104,7 @@ def buscar_newsapi_org(termo):
         st.warning(f"Erro ao buscar no NewsAPI.org: {e}")
         return pd.DataFrame(columns=COLUNAS_FINAIS)
 
-# --- FUNÇÃO PRINCIPAL DE BUSCA ---
+# --- FUNÇÃO PRINCIPAL DE BUSCA (MODIFICADA) ---
 @st.cache_data(ttl=3600)
 def pega_noticias(termo_busca, max_noticias=5):
     """Busca notícias de múltiplas fontes, combina e remove duplicatas."""
@@ -121,8 +121,16 @@ def pega_noticias(termo_busca, max_noticias=5):
         if todas_as_noticias.empty:
             return pd.DataFrame()
 
+        # --- MODIFICAÇÃO ADICIONADA ---
+        print(f"Total de notícias encontradas (com duplicatas): {len(todas_as_noticias)}")
+        # --------------------------------
+
         todas_as_noticias.dropna(subset=['link'], inplace=True)
         noticias_unicas = todas_as_noticias.drop_duplicates(subset=['link'], keep='first')
+        
+        # --- MODIFICAÇÃO ADICIONADA ---
+        print(f"Total de notícias ÚNICAS após a limpeza: {len(noticias_unicas)}")
+        # --------------------------------
         
         st.success(f"Busca concluída! {len(noticias_unicas)} notícias únicas encontradas (antes do limite).")
         return noticias_unicas.head(max_noticias)
@@ -247,7 +255,6 @@ def gerar_newsletter_streamlit(lista_json):
         with st.container():
             col_img, col_content = st.columns([1, 4])
             with col_img:
-                # --- LINHA ALTERADA ---
                 st.image(imagem, width='stretch')
             with col_content:
                 st.subheader(titulo)
@@ -297,5 +304,3 @@ if st.button("Gerar Newsletter"):
             gerar_newsletter_streamlit(resumos_json)
         else:
             st.error(f"Nenhuma notícia encontrada para o termo '{termo_busca}' em nenhuma das fontes. Tente outro termo.")
-
-
