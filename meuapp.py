@@ -188,8 +188,7 @@ def processa_noticias_com_gemini(df_conteudos):
             continue
 
         try:
-            # Recomendo usar um nome de modelo válido, como 'gemini-1.5-flash-latest'
-            model = genai.GenerativeModel(model_name="gemini-1.5-flash-latest")
+            model = genai.GenerativeModel(model_name="gemini-2.5-flash-lite")
             
             response = model.generate_content(
                 f"""
@@ -198,8 +197,8 @@ def processa_noticias_com_gemini(df_conteudos):
                 {{
                     "titulo": "O título da notícia.",
                     "data_de_publicacao": "A data em que a notícia foi publicada (se disponível).",
-                    "resumo_curto": "Um resumo conciso da notícia em até 30 palavras.",
-                    "resumo_maior": "Um resumo mais detalhado da notícia em até 150 palavras.",
+                    "resumo_curto": "Um resumo conciso da notícia, apensa com o assunto principal da noticia, não precisa enrolar muito, apenas o basico para um usuario entender do que se trata a noticia, entre 30 palavras e 50 palavras.",
+                    "resumo_maior": "Um resumo mais detalhado da notícia, apenas com as informações mais relevantes da noticia e algumas observações a mais, com mais de 150 palavras.",
                     "links_de_imagens": ["Uma lista contendo até 2 URLs das imagens mais relevantes da notícia. Se não houver, retorne uma lista vazia."]
                 }}
 
@@ -298,4 +297,5 @@ if st.button("Gerar Newsletter"):
             gerar_newsletter_streamlit(resumos_json)
         else:
             st.error(f"Nenhuma notícia encontrada para o termo '{termo_busca}' em nenhuma das fontes. Tente outro termo.")
+
 
