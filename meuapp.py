@@ -141,8 +141,9 @@ def extrair_conteudo_noticias(df_noticias):
     progress_bar = st.progress(0)
     status_text = st.empty()
 
-    for index, row in df_noticias.iterrows():
-        status_text.text(f"Extraindo notícia {index + 1}/{total_noticias}: {row['title'][:50]}...")
+    # Usando enumerate para um contador sequencial (i)
+    for i, (index, row) in enumerate(df_noticias.iterrows()):
+        status_text.text(f"Extraindo notícia {i + 1}/{total_noticias}: {row['title'][:50]}...")
         url = f"https://r.jina.ai/{row['link']}"
         try:
             response = requests.get(url, headers=headers, timeout=20)
@@ -151,7 +152,8 @@ def extrair_conteudo_noticias(df_noticias):
         except requests.exceptions.RequestException as e:
             conteudos.append(f"Erro ao buscar conteúdo para o título '{row['title']}': {e}")
         
-        progress_bar.progress((index + 1) / total_noticias)
+        # Usando o contador 'i' para garantir que o valor seja sempre entre 0.0 e 1.0
+        progress_bar.progress((i + 1) / total_noticias)
     
     status_text.empty()
     return pd.DataFrame({
