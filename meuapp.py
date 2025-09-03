@@ -15,8 +15,8 @@ from pydantic import BaseModel, Field
 
 
 # --- Configuração das Chaves de API ---
-JINA_API_KEY = userdata.get('JINA_API_KEY')
-GEMINI_API_KEY = userdata.get('GEMINI_API_KEY')
+JINA_API_KEY = st.secrets['JINA_API_KEY']
+GEMINI_API_KEY = st.secrets['GEMINI_API_KEY']
 
 def buscar_google_news(termo):
     from GoogleNews import GoogleNews
@@ -538,3 +538,4 @@ if st.button('Gerar Newsletter'):
         # --- Exibe a Newsletter HTML na tela ---
         st.subheader("Visualização da Newsletter")
         st.components.v1.html(newsletter_html, height=600, scrolling=True)
+
