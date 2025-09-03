@@ -8,79 +8,102 @@ from datetime import datetime
 from typing import List
 
 from sklearn.metrics.pairwise import cosine_similarity
-import numpy as np
 from google.genai import types
 from google import genai 
 
+from pydantic import BaseModel, Field
+
+
 # --- Configuração das Chaves de API ---
-try:
-    JINA_API_KEY = st.secrets["JINA_API_KEY"]
-    GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
-    # A configuração global não é usada pelas suas funções, mas é boa prática mantê-la.
-    genai.configure(api_key=GEMINI_API_KEY)
-except (KeyError, FileNotFoundError):
-    st.error("Erro: Verifique se JINA_API_KEY e GEMINI_API_KEY estão no seu arquivo secrets.toml.")
-    st.stop()
+JINA_API_KEY = userdata.get('JINA_API_KEY')
+GEMINI_API_KEY = userdata.get('GEMINI_API_KEY')
 
 def buscar_google_news(termo):
-    googlenews = GoogleNews(lang='pt-BR', period='1d', encode='utf-8')
-    googlenews.search(termo)
+    from GoogleNews import GoogleNews
+
+    # Inicializa o objeto GoogleNews com os parâmetros desejados
+    googlenews = GoogleNews(
+        lang='pt-BR',        # Define o idioma para português do Brasil
+        period='1d',         # Define o período para os últimos 7 dias
+        encode='utf-8'       # Define a codificação para UTF-8
+    )
+
+    # Realiza a busca por notícias relacionadas ao termo 'tecnologia'
+    googlenews.search('Inteligencia Artificial')
+
+    # Define o número máximo de resultados desejados
     max_resultados = 1000
     resultados = []
     pagina = 1
+
+    # Itera sobre as páginas de resultados até atingir o número desejado
     while len(resultados) < max_resultados:
         googlenews.get_page(pagina)
         noticias = googlenews.result()
-        if not noticias: break
+        if not noticias:
+            break  # Encerra se não houver mais resultados
         resultados.extend(noticias)
         pagina += 1
+
+    # Limita a lista de resultados ao número máximo desejado
     resultados = resultados[:max_resultados]
-    if not resultados: return pd.DataFrame()
+
+    # Separandos as noticias
+    links_noticias = [noticia['link'].split('&ved')[0] for noticia in resultados]
+
+    # Exibe os resultados
+    quantidade_noticias = len(resultados)
+    print(f'Quantidade de notícias retornadas do GoogleNews: {quantidade_noticias}')
+
+    # Coloca todas as noticias num dataframe
+    import pandas as pd
     df = pd.DataFrame(resultados)
     df['link'] = df['link'].str.split('&ved').str[0]
+    # a coluna media deve ser renomeada para source
     df.rename(columns={'media': 'source'}, inplace=True)
-    if 'datetime' in df.columns: df.drop(columns=['datetime'], inplace=True)
-    if 'img' in df.columns: df.drop(columns=['img'], inplace=True)
+    # dropar datetime e img
+    df.drop(columns=['datetime', 'img'], inplace=True)
+
     return df
 
+
+
 def pega_noticias(termo_busca):
+    """Busca notícias de múltiplas fontes, combina e remove duplicatas."""
+
     todas_as_noticias = buscar_google_news(termo_busca)
-    if todas_as_noticias.empty: return pd.DataFrame()
+
+    if todas_as_noticias.empty:
+        return pd.DataFrame()
+    print('Total de noticias do Google:' + str(todas_as_noticias.shape[0]))
+    # Limpa e remove duplicatas baseadas no link
     todas_as_noticias.dropna(subset=['link'], inplace=True)
+    print(f"Após remover linhas com link vazio: {todas_as_noticias.shape[0]} notícias")
     noticias_unicas = todas_as_noticias.drop_duplicates(subset=['link'], keep='first')
+    print(f"Após remover duplicatas por link: {noticias_unicas.shape[0]} notícias")
     noticias_unicas = noticias_unicas.drop_duplicates(subset=['title'], keep='first')
+    print(f"Após remover duplicatas por título: {noticias_unicas.shape[0]} notícias")
+    #resetaer index
     noticias_unicas.reset_index(drop=True, inplace=True)
-    return noticias_unicas
+    print(noticias_unicas.shape)
+    # adicionar um reset_index
 
-def extrair_conteudo_noticias(df_noticias):
-    headers = {"Authorization": f"Bearer {JINA_API_KEY}", "X-Engine": "browser", "X-Return-Format": "markdown"}
-    total_noticias = len(df_noticias)
-    conteudos = []
-    for index, row in df_noticias.iterrows():
-        st.session_state.status_bar.update(label=f"Extraindo notícia {index + 1}/{total_noticias}...")
-        url = f"https://r.jina.ai/{row['link']}"
-        try:
-            response = requests.get(url, headers=headers, timeout=90)
-            response.raise_for_status()
-            conteudos.append(response.text)
-        except requests.exceptions.RequestException as e:
-            conteudos.append(f"Erro ao buscar conteúdo: {e}")
-    df_noticias['content'] = conteudos
-    return df_noticias
-
+    print(f"Busca concluída! {noticias_unicas.shape[0]} notícias únicas encontradas.") # Changed st.success to print
+    return  noticias_unicas
 
 def ordenar_noticias_por_similaridade(interesse, df_noticias, top_n=10):
-    # SUA FUNÇÃO EXATA. A ÚNICA MUDANÇA É 'userdata.get' -> 'st.secrets'.
+
     TEXTOS = df_noticias['title'].to_list()
 
-    client = genai.Client(api_key = st.secrets['GEMINI_API_KEY'])
+    client = genai.Client(api_key = userdata.get('GEMINI_API_KEY'))
 
     result = client.models.embed_content(
-            model="gemini-embedding-001",
-            contents=interesse)
+                model="gemini-embedding-001",
+                contents=interesse)
 
     interesse_embed  = np.array(result.embeddings[0].values)
 
+    # Processar os textos em lotes de 100
     VETORES = []
     for i in range(0, len(TEXTOS), 100):
         batch_textos = TEXTOS[i:i+100]
@@ -91,15 +114,56 @@ def ordenar_noticias_por_similaridade(interesse, df_noticias, top_n=10):
         ).embeddings
         VETORES.extend([np.array(e.values) for e in embeddings_result])
 
+    # Certifique-se de que interesse_embed é um array numpy 2D (necessário para cosine_similarity)
     interesse_embed_2d = interesse_embed.reshape(1, -1)
+
+    # Calcular a similaridade de cosseno entre o vetor de interesse e cada vetor na lista VETORES
     similaridades = [cosine_similarity(interesse_embed_2d, v.reshape(1, -1))[0][0] for v in VETORES]
+
+    # Adicionar as similaridades ao DataFrame
     df_noticias['score'] = similaridades
-    df_noticias.sort_values(by='score', ascending=False, inplace=True)
+
+    # Ordenar o DataFrame pelo score
+    df_noticias.sort_values(by='score', ascending=False, inplace = True)
+
+    # Retornar apenas as top_n notícias e resetar o index
     return df_noticias.head(top_n).reset_index(drop=True)
 
+def extrair_conteudo_noticias(df_noticias):
+    """Extrai o conteúdo completo dos artigos usando a Jina AI API."""
+    headers = {
+        "Authorization": f"Bearer {userdata.get('JINA_API_KEY')}",
+        "X-Engine": "browser",
+        "X-Return-Format": "markdown"
+    }
+
+    total_noticias = len(df_noticias)
+    # Removed Streamlit progress bar and status text
+
+    conteudos = []
+    for index, row in df_noticias.iterrows():
+        print(f"Extraindo notícia {index + 1}/{total_noticias}: {row['title'][:50]}...") # Changed status_text.text to print
+        url = f"https://r.jina.ai/{row['link']}"
+        while True:
+            try:
+                response = requests.get(url, headers=headers, timeout=90)
+                response.raise_for_status()
+                conteudos.append(response.text)
+                break
+            except requests.exceptions.RequestException as e:
+                conteudos.append(f"Erro ao buscar conteúdo para o título '{row['title']}': {e}")
+
+
+    df_noticias['content'] = conteudos
+    return df_noticias
+
+
+from google import genai
+from pydantic import BaseModel, Field
+import time
+import json
 
 def processa_noticias_com_gemini(articles_df):
-    # SUA FUNÇÃO EXATA. NENHUMA MUDANÇA.
     client = genai.Client(api_key = GEMINI_API_KEY)
 
     class Noticia(BaseModel):
@@ -115,9 +179,10 @@ def processa_noticias_com_gemini(articles_df):
         tags_relevantes: List[str] = Field(..., description="Uma lista de tags ou palavras-chave relevantes para a notícia.")
         prompt_satira_imagem: str = Field(..., description="Um prompt de sátira, baseado no conteúdo da notícia, para ser usado em um gerador de imagens. Deve ser criativo e com um tom humorístico ou irônico.")
 
+
     respostas = []
     for texto in articles_df['content']:
-        print(f"Fazendo extração do {texto[:40]}...") # Irá aparecer no seu terminal
+        print(f"Fazendo extração do {texto[:40]}...")
         while True:
             try:
                 response = client.models.generate_content(
@@ -132,68 +197,344 @@ def processa_noticias_com_gemini(articles_df):
             except Exception as e:
                 print(f"Erro na API: {e} \nTentando novamente em 3s...")
                 time.sleep(3)
+
+
+
+
+        # Use the response as a JSON string.
         respostas.append(response.text)
 
-    lista_de_dicionarios = [json.loads(json_string or '{}') for json_string in respostas]
+
+
+    # Converter cada string JSON em um dicionário
+    lista_de_dicionarios = [json.loads(json_string) for json_string in respostas]
+
     processados_df = pd.DataFrame(lista_de_dicionarios)
     return processados_df
 
 
 def gerar_card_noticia(noticia: dict, idx: int) -> str:
-    # ... seu código de card ...
-    return f"""<div>...</div>"""
+    """Gera HTML para um card de notícia a partir de um dicionário (linha do dataframe 'processados')."""
+
+    # Extrai dados da notícia usando as chaves do dicionário (nomes das colunas do dataframe 'processados')
+    titulo = noticia.get('titulo', '')
+    portal = noticia.get('portal', '')
+    data_pub = noticia.get('data_de_publicacao', '') # Usando 'data_de_publicacao'
+    resumo_breve = noticia.get('resumo_curto', '')  # Usando 'resumo_curto'
+    resumo_expandido = noticia.get('resumo_maior', '') # Usando 'resumo_maior'
+    tags = noticia.get('tags_relevantes', []) # Usando 'tags_relevantes'
+    url_original = noticia.get('link', '') # Usando 'link'
+    caminho_imagem = noticia.get('links_de_imagens', []) # Usando 'links_de_imagens' - pode ser uma lista
+    prompt_satira_imagem = noticia.get('prompt_satira_imagem', '') # Usando 'prompt_satira_imagem'
+    pontos_principais = noticia.get('pontos_principais', []) # Usando 'pontos_principais'
+
+    # Pega o primeiro link de imagem, se existir, caso contrário, usa uma string vazia
+    imagem_url = caminho_imagem[0] if caminho_imagem else ''
+
+    # Converte tags para string
+    tags_str = ', '.join(tags) if tags else ''
+
+    # Converte pontos principais para HTML list items
+    pontos_principais_html = "".join([f"<li>{p}</li>" for p in pontos_principais]) if pontos_principais else ""
+
+
+    # Gera HTML do card
+    card_html = f"""
+    <div class="card-noticia">
+        <div class="card-header">
+            <h3 class="card-titulo">{titulo}</h3>
+            <div class="card-meta">
+                <span class="portal">{portal}</span>
+                <span class="data">{data_pub}</span>
+            </div>
+        </div>
+
+        <div class="card-content">
+            <div class="card-imagem">
+                <img src="{imagem_url}" alt="{titulo}" onerror="this.style.display='none'">
+            </div>
+
+            <div class="card-texto">
+                <p class="resumo-breve"><strong>Resumo Curto:</strong> {resumo_breve}</p>
+
+                <div class="button-array">
+                    <button class="popover-button" data-popover-target="#popover-resumo-{idx}">Resumo Completo</button>
+                    <button class="popover-button" data-popover-target="#popover-tags-{idx}">Tags Relevantes</button>
+                    <button class="popover-button" data-popover-target="#popover-satira-{idx}">Prompt de Sátira</button>
+                    <button class="popover-button" data-popover-target="#popover-pontos-{idx}">Pontos Principais</button>
+                </div>
+
+                <a href="{url_original}" target="_blank" class="btn-ler-mais">
+                    Ler notícia completa
+                </a>
+            </div>
+        </div>
+
+        <!-- Popover content -->
+        <div id="popover-resumo-{idx}" class="popover-content" style="display: none;">
+            <div class="popover-header">
+                <h4>Resumo Completo</h4>
+                 <span class="close-popover">&times;</span>
+            </div>
+            <div class="popover-body">
+                <p>{resumo_expandido}</p>
+            </div>
+        </div>
+
+        <div id="popover-tags-{idx}" class="popover-content" style="display: none;">
+             <div class="popover-header">
+                <h4>Tags Relevantes</h4>
+                 <span class="close-popover">&times;</span>
+            </div>
+             <div class="popover-body">
+                 <div>{tags_str}</div>
+            </div>
+        </div>
+
+        <div id="popover-satira-{idx}" class="popover-content" style="display: none;">
+            <div class="popover-header">
+                <h4>Prompt de Sátira</h4>
+                <span class="close-popover">&times;</span>
+            </div>
+             <div class="popover-body">
+                 <p>{prompt_satira_imagem}</p>
+            </div>
+        </div>
+
+        <div id="popover-pontos-{idx}" class="popover-content" style="display: none;">
+            <div class="popover-header">
+                <h4>Pontos Principais</h4>
+                <span class="close-popover">&times;</span>
+            </div>
+             <div class="popover-body">
+                 <ul>{pontos_principais_html}</ul>
+            </div>
+        </div>
+    </div>
+    """
+
+    return card_html
 
 def gerar_html_newsletter(df: pd.DataFrame, interesse: str) -> str:
-    # ... seu código de gerar HTML ...
-    # Lembre-se de ter um placeholder para injetar os cards
-    html_template = """<!DOCTYPE html>...</html>"""
-    cards_html = ""
+    """Gera um arquivo HTML para a newsletter a partir do DataFrame processado."""
+
+    data_atual = datetime.now().strftime("%d/%m/%Y")
+
+    # Início do HTML da newsletter
+    html_content = f"""
+    <!DOCTYPE html>
+    <html lang="pt-BR">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Newsletter sobre {interesse}</title>
+        <style>
+            body {{ font-family: sans-serif; line-height: 1.6; margin: 20px; background-color: #e0e0e0;}} /* Added background color to body */
+            .container {{ max-width: 800px; margin: auto; background: #f9f9f9; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0, 0, 0, 0.1); }} /* Added box-shadow to container */
+            .header {{ text-align: center; margin-bottom: 30px; }}
+            .header h1 {{ color: #333; }}
+            .header p {{ color: #666; }}
+            .card-noticia {{ border: 1px solid #ddd; margin-bottom: 20px; border-radius: 8px; overflow: hidden; background: #d3dbde; box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1); position: relative;}} /* Added box-shadow to card and changed background color, added position: relative for popover positioning */
+            .card-header {{ background: #d3dbde; padding: 15px; border-bottom: 1px solid #ddd; }} /* Changed background color to match card */
+            .card-titulo {{ margin: 0; color: #007bff; }}
+            .card-meta {{ font-size: 0.9em; color: #555; margin-top: 5px; }}
+            .card-meta span {{ margin-right: 15px; }}
+            .card-content {{ display: flex; flex-wrap: wrap; padding: 15px; }}
+            .card-imagem {{ flex: 1 1 150px; margin-right: 15px; }}
+            .card-imagem img {{ max-width: 100%; height: auto; border-radius: 4px; }}
+            .card-texto {{ flex: 2 1 300px; }}
+            .resumo-breve {{ font-weight: normal; margin-bottom: 10px; }}
+            .button-array {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin-bottom: 10px; }} /* Grid for button array */
+            .popover-button {{
+                padding: 10px;
+                background-color: #007bff;
+                color: white;
+                border: none;
+                border-radius: 5px;
+                cursor: pointer;
+                font-size: 0.9em;
+                text-align: center;
+            }}
+            .popover-button:hover {{
+                background-color: #0056b3;
+            }}
+            .btn-ler-mais {{
+                display: block; /* Make it a block element to take full width */
+                width: 100%; /* Make it wider */
+                background-color: #28a745; /* Elegant green color */
+                color: white;
+                padding: 12px 15px; /* Slightly more padding */
+                text-decoration: none;
+                border-radius: 5px;
+                margin-top: 15px; /* Add some space above the button */
+                text-align: center; /* Center the text */
+                font-size: 1.1em; /* Slightly larger font */
+                transition: background-color 0.3s ease; /* Smooth hover effect */
+            }}
+            .btn-ler-mais:hover {{
+                background-color: #218838; /* Darker green on hover */
+            }}
+            .footer {{ text-align: center; margin-top: 30px; font-size: 0.8em; color: #777; }}
+
+            /* Popover styles */
+            .popover-content {{
+                display: none; /* Hidden by default */
+                position: absolute;
+                background-color: #f9f9f9;
+                box-shadow: 0 8px 16px 0 rgba(0,0,0,0.2);
+                padding: 15px;
+                z-index: 1;
+                border-radius: 8px;
+                max-width: 500px; /* Increased max-width */
+                word-wrap: break-word; /* Break long words */
+                top: 50%; /* Position relative to the card */
+                left: 50%;
+                transform: translate(-50%, -50%); /* Center the popover */
+                border: 1px solid #ddd;
+            }}
+
+            .popover-header {{
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                border-bottom: 1px solid #ddd;
+                padding-bottom: 10px;
+                margin-bottom: 10px;
+            }}
+
+            .popover-header h4 {{
+                margin: 0;
+                color: #333;
+            }}
+
+            .popover-body {{
+                /* Add styles for the body if needed */
+            }}
+
+            .close-popover {{
+                color: #aaa;
+                font-size: 20px;
+                font-weight: bold;
+                cursor: pointer;
+            }}
+
+            .close-popover:hover,
+            .close-popover:focus {{
+                color: #000;
+                text-decoration: none;
+            }}
+
+            .popover-content ul {{
+                list-style-type: disc;
+                margin-left: 20px;
+            }}
+            .popover-content li {{
+                margin-bottom: 5px;
+            }}
+
+
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1>Newsletter sobre {interesse}</h1>
+            </div>
+            """
+
+    # Adiciona cada card de notícia
     for idx, row in df.iterrows():
-        cards_html += gerar_card_noticia(row.to_dict(), idx)
-    return html_template.replace("", cards_html)
+        noticia_dict = row.to_dict()
+        html_content += gerar_card_noticia(noticia_dict, idx)
 
-# --- INTERFACE E WORKFLOW DO STREAMLIT ---
-st.set_page_config(page_title="Gerador de Newsletter", layout="wide")
-st.title("📰 Gerador de Newsletter com IA")
+    # Fim do HTML da newsletter
+    html_content += """
+        </div>
 
-tema_busca = st.text_input("1. Tema geral para a busca", value="Inteligência Artificial")
-interesse_ordem = st.text_input("2. Interesse específico para ordenar", value="IA na política, governo e prefeituras")
-top_noticias = st.number_input("3. Quantidade de notícias para a newsletter", min_value=1, max_value=20, value=3)
+        <script>
+            document.addEventListener('DOMContentLoaded', function() {
+                const buttons = document.querySelectorAll('.popover-button');
+                const closeButtons = document.querySelectorAll('.close-popover');
 
-if st.button("Gerar Newsletter", type="primary"):
-    with st.status("Iniciando processo...", expanded=True) as status:
-        st.session_state.status_bar = status
+                buttons.forEach(button => {
+                    button.addEventListener('click', function() {
+                        const target = document.querySelector(this.dataset.popoverTarget);
+                        // Hide all other popovers
+                        document.querySelectorAll('.popover-content').forEach(popover => {
+                            if (popover !== target) {
+                                popover.style.display = 'none';
+                            }
+                        });
+                        // Toggle the display of the target popover
+                        target.style.display = target.style.display === 'none' ? 'block' : 'none';
+                    });
+                });
+
+                closeButtons.forEach(button => {
+                    button.addEventListener('click', function() {
+                        this.closest('.popover-content').style.display = 'none';
+                    });
+                });
+
+                // Hide popover when clicking outside
+                document.addEventListener('click', function(event) {
+                    if (!event.target.classList.contains('popover-button') && !event.target.closest('.popover-content')) {
+                        document.querySelectorAll('.popover-content').forEach(popover => {
+                            popover.style.display = 'none';
+                        });
+                    }
+                });
+            });
+        </script>
+    </body>
+    </html>
+    """
+
+    with open("newsletter.html", "w", encoding="utf-8") as f:
+        f.write(html_content)
+    print("Newsletter HTML gerada e salva como 'newsletter.html'")
+
+    return html_content
+
+
+
+st.title('Minha Newsletter')
+
+TEMA = st.text_input('Tema')
+INTERESSE = st.text_input('Tema')
+TOP_NOTICIAS = st.number_input('Tema', value = 5)
+
+if st.button('Gerar Newsletter'):
+    if not TEMA or not INTERESSE:
+        st.warning('Por favor, preencha o Tema e o seu Interesse específico.')
+    else:
+        # Etapa 1: Pega as notícias
+        with st.spinner('Buscando as notícias mais recentes... 📰', show_time = True):
+            pegas = pega_noticias(TEMA)
         
-        status.update(label="Passo 1/5: Buscando notícias...")
-        df_bruto = pega_noticias(tema_busca)
-
-        if df_bruto.empty:
-            st.error("Nenhuma notícia encontrada.")
-            st.stop()
-
-        status.update(label="Passo 2/5: Ordenando por relevância...")
-        df_ordenado = ordenar_noticias_por_similaridade(interesse=interesse_ordem, df_noticias=df_bruto, top_n=top_noticias)
-
-        status.update(label="Passo 3/5: Extraindo conteúdo...")
-        df_com_conteudo = extrair_conteudo_noticias(df_ordenado)
-
-        status.update(label="Passo 4/5: Processando com IA...")
-        df_processado = processa_noticias_com_gemini(df_com_conteudo)
-
-        status.update(label="Passo 5/5: Montando a newsletter...")
-        df_com_conteudo.reset_index(drop=True, inplace=True)
-        df_processado.reset_index(drop=True, inplace=True)
-        df_final = pd.concat([df_com_conteudo, df_processado], axis=1)
-        html_final = gerar_html_newsletter(df_final, interesse_ordem)
+        # Etapa 2: Ordena por similaridade
+        with st.spinner('Analisando e ordenando as notícias por relevância... 🧠', show_time = True):
+            top_noticias = ordenar_noticias_por_similaridade(
+                interesse=INTERESSE, 
+                df_noticias=pegas, 
+                top_n=int(TOP_NOTICIAS) # Garante que seja inteiro
+            )
         
-        status.update(label="Processo concluído!", state="complete", expanded=False)
+        # Etapa 3: Extrai o conteúdo completo
+        with st.spinner('Extraindo o conteúdo completo das principais notícias... 📄', show_time = True):
+            extracoes = extrair_conteudo_noticias(top_noticias)
+        
+        # Etapa 4: Processa com a IA
+        with st.spinner('Criando resumos com a ajuda da IA... ✨', show_time = True):
+            processados = processa_noticias_com_gemini(extracoes)
+        
+        # Etapa 5: Gera o HTML final
+        with st.spinner('Montando sua newsletter personalizada...  HTML', show_time = True):
+            final = pd.concat([extracoes, processados], axis=1)
+            newsletter_html = gerar_html_newsletter(final, INTERESSE)
 
-    st.success("Newsletter gerada com sucesso!")
-    # ... (código de exibição e download) ...
-
-
-
-
-
-
-
+        st.success('Sua newsletter foi gerada com sucesso!')
+        
+        # --- Exibe a Newsletter HTML na tela ---
+        st.subheader("Visualização da Newsletter")
+        st.components.v1.html(newsletter_html, height=600, scrolling=True)
