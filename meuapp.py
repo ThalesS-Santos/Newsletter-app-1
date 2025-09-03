@@ -126,4 +126,84 @@ def processa_noticias_com_gemini(articles_df):
         noticia_completa: str = Field(..., description="O texto completo da notícia.")
         links_de_imagens: List[str] = Field(..., description="Uma lista de URLs das imagens associadas à notícia. Considere apenas aquelas relevantes para a noticia. Descarte logos, divulgacoes, etc...")
         tags_relevantes: List[str] = Field(..., description="Uma lista de tags ou palavras-chave relevantes para a notícia.")
-        prompt_satira_imagem: str = Field(..., description="Um prompt de sátira, baseado no conteúdo da notícia, para ser usado em um gerador de imagens. Deve ser criativo e com um tom humorístico ou ir
+        prompt_satira_imagem: str = Field(..., description="Um prompt de sátira, baseado no conteúdo da notícia, para ser usado em um gerador de imagens. Deve ser criativo e com um tom humorístico ou irônico.")
+
+    respostas = []
+    for texto in articles_df['content']:
+        print(f"Fazendo extração do {texto[:40]}...") # Irá aparecer no seu terminal
+        while True:
+            try:
+                response = client.models.generate_content(
+                    model="gemini-2.5-flash",
+                    contents = f"Extraia informacoes da noticia em texto cru dada a seguir: \n\n {texto}",
+                    config={
+                        "response_mime_type": "application/json",
+                        "response_schema": Noticia,
+                    },
+                )
+                break
+            except Exception as e:
+                print(f"Erro na API: {e} \nTentando novamente em 3s...")
+                time.sleep(3)
+        respostas.append(response.text)
+
+    lista_de_dicionarios = [json.loads(json_string or '{}') for json_string in respostas]
+    processados_df = pd.DataFrame(lista_de_dicionarios)
+    return processados_df
+
+# ==============================================================================
+# ==== FIM - SUAS FUNÇÕES GEMINI EXATAS ====
+# ==============================================================================
+
+# --- FUNÇÕES DE GERAÇÃO DE HTML (INTOCADAS) ---
+def gerar_card_noticia(noticia: dict, idx: int) -> str:
+    # ... seu código de card ...
+    return f"""<div>...</div>"""
+
+def gerar_html_newsletter(df: pd.DataFrame, interesse: str) -> str:
+    # ... seu código de gerar HTML ...
+    # Lembre-se de ter um placeholder para injetar os cards
+    html_template = """<!DOCTYPE html>...</html>"""
+    cards_html = ""
+    for idx, row in df.iterrows():
+        cards_html += gerar_card_noticia(row.to_dict(), idx)
+    return html_template.replace("", cards_html)
+
+# --- INTERFACE E WORKFLOW DO STREAMLIT ---
+st.set_page_config(page_title="Gerador de Newsletter", layout="wide")
+st.title("📰 Gerador de Newsletter com IA")
+
+tema_busca = st.text_input("1. Tema geral para a busca", value="Inteligência Artificial")
+interesse_ordem = st.text_input("2. Interesse específico para ordenar", value="IA na política, governo e prefeituras")
+top_noticias = st.number_input("3. Quantidade de notícias para a newsletter", min_value=1, max_value=20, value=3)
+
+if st.button("Gerar Newsletter", type="primary"):
+    with st.status("Iniciando processo...", expanded=True) as status:
+        st.session_state.status_bar = status
+        
+        status.update(label="Passo 1/5: Buscando notícias...")
+        df_bruto = pega_noticias(tema_busca)
+
+        if df_bruto.empty:
+            st.error("Nenhuma notícia encontrada.")
+            st.stop()
+
+        status.update(label="Passo 2/5: Ordenando por relevância...")
+        df_ordenado = ordenar_noticias_por_similaridade(interesse=interesse_ordem, df_noticias=df_bruto, top_n=top_noticias)
+
+        status.update(label="Passo 3/5: Extraindo conteúdo...")
+        df_com_conteudo = extrair_conteudo_noticias(df_ordenado)
+
+        status.update(label="Passo 4/5: Processando com IA...")
+        df_processado = processa_noticias_com_gemini(df_com_conteudo)
+
+        status.update(label="Passo 5/5: Montando a newsletter...")
+        df_com_conteudo.reset_index(drop=True, inplace=True)
+        df_processado.reset_index(drop=True, inplace=True)
+        df_final = pd.concat([df_com_conteudo, df_processado], axis=1)
+        html_final = gerar_html_newsletter(df_final, interesse_ordem)
+        
+        status.update(label="Processo concluído!", state="complete", expanded=False)
+
+    st.success("Newsletter gerada com sucesso!")
+    # ... (código de exibição e download) ...
