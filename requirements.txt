@@ -1,8 +1,9 @@
+# Arquivo requirements.txt corrigido e limpo
 streamlit
 pandas
-GoogleNews
-scikit-learn
+requests
 google-generativeai
+GoogleNews
 pydantic
 numpy
-requests
+scikit-learn
