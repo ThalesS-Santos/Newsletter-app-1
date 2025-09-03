@@ -95,7 +95,7 @@ def ordenar_noticias_por_similaridade(interesse, df_noticias, top_n=10):
 
     TEXTOS = df_noticias['title'].to_list()
 
-    client = genai.Client(api_key = userdata.get('GEMINI_API_KEY'))
+    client = genai.Client(api_key = st.secrets['GEMINI_API_KEY'])
 
     result = client.models.embed_content(
                 model="gemini-embedding-001",
@@ -132,7 +132,7 @@ def ordenar_noticias_por_similaridade(interesse, df_noticias, top_n=10):
 def extrair_conteudo_noticias(df_noticias):
     """Extrai o conteúdo completo dos artigos usando a Jina AI API."""
     headers = {
-        "Authorization": f"Bearer {userdata.get('JINA_API_KEY')}",
+        "Authorization": f"Bearer {st.secrets['JINA_API_KEY']}",
         "X-Engine": "browser",
         "X-Return-Format": "markdown"
     }
@@ -538,6 +538,7 @@ if st.button('Gerar Newsletter'):
         # --- Exibe a Newsletter HTML na tela ---
         st.subheader("Visualização da Newsletter")
         st.components.v1.html(newsletter_html, height=600, scrolling=True)
+
 
 
 
