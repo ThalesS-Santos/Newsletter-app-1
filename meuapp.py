@@ -28,10 +28,6 @@ except (KeyError, FileNotFoundError):
     st.error("Erro: Verifique se JINA_API_KEY e GEMINI_API_KEY estão no seu arquivo secrets.toml.")
     st.stop()
 
-# ==============================================================================
-# ==== FUNÇÕES NÃO-GEMINI (INTOCADAS) ====
-# ==============================================================================
-
 def buscar_google_news(termo):
     googlenews = GoogleNews(lang='pt-BR', period='1d', encode='utf-8')
     googlenews.search(termo)
@@ -78,9 +74,6 @@ def extrair_conteudo_noticias(df_noticias):
     df_noticias['content'] = conteudos
     return df_noticias
 
-# ==============================================================================
-# ==== INÍCIO - SUAS FUNÇÕES GEMINI EXATAS ====
-# ==============================================================================
 
 def ordenar_noticias_por_similaridade(interesse, df_noticias, top_n=10):
     # SUA FUNÇÃO EXATA. A ÚNICA MUDANÇA É 'userdata.get' -> 'st.secrets'.
@@ -151,11 +144,7 @@ def processa_noticias_com_gemini(articles_df):
     processados_df = pd.DataFrame(lista_de_dicionarios)
     return processados_df
 
-# ==============================================================================
-# ==== FIM - SUAS FUNÇÕES GEMINI EXATAS ====
-# ==============================================================================
 
-# --- FUNÇÕES DE GERAÇÃO DE HTML (INTOCADAS) ---
 def gerar_card_noticia(noticia: dict, idx: int) -> str:
     # ... seu código de card ...
     return f"""<div>...</div>"""
@@ -207,6 +196,7 @@ if st.button("Gerar Newsletter", type="primary"):
 
     st.success("Newsletter gerada com sucesso!")
     # ... (código de exibição e download) ...
+
 
 
 
