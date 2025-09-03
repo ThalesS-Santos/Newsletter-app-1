@@ -41,91 +41,79 @@ except (KeyError, FileNotFoundError):
 # --- NOVAS FUNÇÕES DE BUSCA ---
 COLUNAS_FINAIS = ['title', 'link', 'source']
 
-def buscar_newsdata(termo):
-    try:
-        api = NewsDataApiClient(apikey=NEWS_API_KEY)
-        response = api.latest_api(q=termo, language='pt', country='br')
-        resultados = response.get('results', [])
-        if not resultados: return pd.DataFrame(columns=COLUNAS_FINAIS)
-        df = pd.DataFrame(resultados)
-        if 'title' in df.columns and 'link' in df.columns:
-            df['source'] = 'NewsData.io'
-            return df[COLUNAS_FINAIS]
-        return pd.DataFrame(columns=COLUNAS_FINAIS)
-    except Exception as e:
-        st.warning(f"Erro ao buscar no NewsData.io: {e}")
-        return pd.DataFrame(columns=COLUNAS_FINAIS)
+import pandas as pd
+from datetime import datetime, timedelta
+
+
+
 
 def buscar_google_news(termo):
-    try:
-        params = {"q": termo, "tbm": "nws", "api_key": SERPAPI_API_KEY, "gl": "br", "hl": "pt-br"}
-        search = GoogleSearch(params)
-        results = search.get_dict()
-        noticias = results.get('news_results', [])
-        if not noticias: return pd.DataFrame(columns=COLUNAS_FINAIS)
-        df = pd.DataFrame(noticias)
-        if 'title' in df.columns and 'link' in df.columns:
-            df['source'] = 'Google News'
-            return df[COLUNAS_FINAIS]
-        return pd.DataFrame(columns=COLUNAS_FINAIS)
-    except Exception as e:
-        st.warning(f"Erro ao buscar no Google News: {e}")
-        return pd.DataFrame(columns=COLUNAS_FINAIS)
+    from GoogleNews import GoogleNews
 
-def buscar_google_search(termo):
-    try:
-        params = {"q": termo, "api_key": SERPAPI_API_KEY, "gl": "br", "hl": "pt-br"}
-        search = GoogleSearch(params)
-        results = search.get_dict()
-        noticias = [res for res in results.get('organic_results', []) if 'title' in res and 'link' in res]
-        if not noticias: return pd.DataFrame(columns=COLUNAS_FINAIS)
-        df = pd.DataFrame(noticias)
-        if 'title' in df.columns and 'link' in df.columns:
-            df['source'] = 'Google Search'
-            return df[COLUNAS_FINAIS]
-        return pd.DataFrame(columns=COLUNAS_FINAIS)
-    except Exception as e:
-        st.warning(f"Erro ao buscar no Google Search: {e}")
-        return pd.DataFrame(columns=COLUNAS_FINAIS)
+    # Inicializa o objeto GoogleNews com os parâmetros desejados
+    googlenews = GoogleNews(
+        lang='pt-BR',        # Define o idioma para português do Brasil
+        period='1d',         # Define o período para os últimos 7 dias
+        encode='utf-8'       # Define a codificação para UTF-8
+    )
 
-def buscar_newsapi_org(termo):
-    try:
-        newsapi = NewsApiClient(api_key=NEWSAPI_ORG_KEY)
-        response = newsapi.get_everything(q=termo, language='pt', sort_by='relevancy')
-        noticias = response.get('articles', [])
-        if not noticias: return pd.DataFrame(columns=COLUNAS_FINAIS)
-        df = pd.DataFrame(noticias)
-        df.rename(columns={'url': 'link'}, inplace=True)
-        if 'title' in df.columns and 'link' in df.columns:
-            df['source'] = 'NewsAPI.org'
-            return df[COLUNAS_FINAIS]
-        return pd.DataFrame(columns=COLUNAS_FINAIS)
-    except Exception as e:
-        st.warning(f"Erro ao buscar no NewsAPI.org: {e}")
-        return pd.DataFrame(columns=COLUNAS_FINAIS)
+    # Realiza a busca por notícias relacionadas ao termo 'tecnologia'
+    googlenews.search('Inteligencia Artificial')
 
-# --- FUNÇÃO PRINCIPAL DE BUSCA (MODIFICADA) ---
-@st.cache_data(ttl=3600)
-def pega_noticias(termo_busca, max_noticias=5):
+    # Define o número máximo de resultados desejados
+    max_resultados = 2000
+    resultados = []
+    pagina = 1
+
+    # Itera sobre as páginas de resultados até atingir o número desejado
+    while len(resultados) < max_resultados:
+        googlenews.get_page(pagina)
+        noticias = googlenews.result()
+        if not noticias:
+            break  # Encerra se não houver mais resultados
+        resultados.extend(noticias)
+        pagina += 1
+
+    # Limita a lista de resultados ao número máximo desejado
+    resultados = resultados[:max_resultados]
+
+    # Separandos as noticias
+    links_noticias = [noticia['link'].split('&ved')[0] for noticia in resultados]
+
+    # Exibe os resultados
+    quantidade_noticias = len(resultados)
+    print(f'Quantidade de notícias retornadas: {quantidade_noticias}')
+
+    # Coloca todas as noticias num dataframe
+    import pandas as pd
+    df = pd.DataFrame(resultados)
+    df['link'] = df['link'].str.split('&ved').str[0]
+    # a coluna media deve ser renomeada para source
+    df.rename(columns={'media': 'source'}, inplace=True)
+
+    return df
+
+
+
+def pega_noticias(termo_busca):
     """Busca notícias de múltiplas fontes, combina e remove duplicatas."""
-    with st.spinner("Buscando em NewsData.io, Google News, Google Search e NewsAPI.org..."):
-        lista_de_noticias_dfs = [
-            buscar_newsdata(termo_busca),
-            buscar_google_news(termo_busca),
-            buscar_google_search(termo_busca),
-            buscar_newsapi_org(termo_busca)
-        ]
 
-        todas_as_noticias = pd.concat(lista_de_noticias_dfs, ignore_index=True)
-        
-        if todas_as_noticias.empty:
-            return pd.DataFrame()
+    todas_as_noticias = buscar_google_news(termo_busca)
 
-        todas_as_noticias.dropna(subset=['link'], inplace=True)
-        noticias_unicas = todas_as_noticias.drop_duplicates(subset=['link'], keep='first')
-    
-        st.success(f"Busca concluída! {len(noticias_unicas)} notícias únicas encontradas (antes do limite).")
-        return noticias_unicas.head(max_noticias)
+    if todas_as_noticias.empty:
+        return pd.DataFrame()
+
+    # Limpa e remove duplicatas baseadas no link
+    todas_as_noticias.dropna(subset=['link'], inplace=True)
+    noticias_unicas = todas_as_noticias.drop_duplicates(subset=['link'], keep='first')
+    noticias_unicas = noticias_unicas.drop_duplicates(subset=['title'], keep='first')
+    #resetaer index
+    noticias_unicas.reset_index(drop=True, inplace=True)
+    print(noticias_unicas.shape)
+    # adicionar um reset_index
+
+    print(f"Busca concluída! {noticias_unicas.shape[0]} notícias únicas encontradas (antes do limite).") # Changed st.success to print
+    return  noticias_unicas
 
 # --- FUNÇÕES DE PROCESSAMENTO ---
 @st.cache_data(ttl=3600)
@@ -304,4 +292,5 @@ if st.button("Gerar Newsletter"):
             gerar_newsletter_streamlit(resumos_json)
         else:
             st.error(f"Nenhuma notícia encontrada para o termo '{termo_busca}' em nenhuma das fontes. Tente outro termo.")
+
 
