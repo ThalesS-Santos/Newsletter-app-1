@@ -11,7 +11,6 @@ from typing import List
 try:
     from GoogleNews import GoogleNews
     from sklearn.metrics.pairwise import cosine_similarity
-    from google import genai
     from google.generativeai import types
     from pydantic import BaseModel, Field
 except ImportError as e:
@@ -207,3 +206,4 @@ if st.button("Gerar Newsletter", type="primary"):
 
     st.success("Newsletter gerada com sucesso!")
     # ... (código de exibição e download) ...
+
