@@ -210,7 +210,7 @@ num_noticias = st.number_input(
     min_value=5,        # Mínimo de 5 notícias
     max_value=20,       # Máximo de 20 para não sobrecarregar
     value=10,           # Valor padrão
-    step=5              # Pular de 5 em 5
+    step=1              # Pular de 1 em 1
 )
 
 if st.button("Gerar Newsletter", type="primary"):
@@ -229,3 +229,4 @@ if st.button("Gerar Newsletter", type="primary"):
             gerar_newsletter_streamlit(resumos_json)
         else:
             st.error(f"Nenhuma notícia encontrada no Google News para o termo '{termo_busca}'. Tente outra palavra-chave.")
+
