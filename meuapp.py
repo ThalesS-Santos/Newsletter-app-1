@@ -502,7 +502,7 @@ st.title('Minha Newsletter')
 
 TEMA = st.text_input('Tema')
 INTERESSE = st.text_input('Interesse')
-TOP_NOTICIAS = st.number_input('Tema', value = 5)
+TOP_NOTICIAS = st.number_input('Número de Notícias', value = 5)
 
 if st.button('Gerar Newsletter'):
     if not TEMA or not INTERESSE:
@@ -538,5 +538,6 @@ if st.button('Gerar Newsletter'):
         # --- Exibe a Newsletter HTML na tela ---
         st.subheader("Visualização da Newsletter")
         st.components.v1.html(newsletter_html, height=600, scrolling=True)
+
 
 
