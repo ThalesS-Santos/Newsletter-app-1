@@ -33,29 +33,28 @@ except (KeyError, FileNotFoundError):
     st.stop()
 
 
-# --- SUA FUNÇÃO DE BUSCA RESTAURADA ---
-def buscar_google_news(termo):
+# --- FUNÇÃO DE BUSCA (COM LIMITE DE RESULTADOS) ---
+# <-- MUDANÇA AQUI: A função agora aceita 'max_resultados'
+def buscar_google_news(termo, max_resultados):
     # Inicializa o objeto GoogleNews
     googlenews = GoogleNews(lang='pt-BR', period='7d', encode='utf-8')
 
     # Realiza a busca com o termo do usuário
     googlenews.search(termo)
 
-    # --- SEU CÓDIGO DE PAGINAÇÃO REINSERIDO AQUI ---
-    # Define o número máximo de resultados desejados
-    max_resultados = 2000
+    # Define o número máximo de resultados desejados vindo do usuário
     resultados = []
     pagina = 1
 
     # Itera sobre as páginas de resultados até atingir o número desejado
-    # Adicionado um status para o usuário ver o progresso da busca longa
     status_text = st.empty()
+    # <-- MUDANÇA AQUI: O loop agora usa o 'max_resultados' vindo do usuário
     while len(resultados) < max_resultados:
-        status_text.text(f"Buscando notícias... Página {pagina}, {len(resultados)} resultados encontrados.")
+        status_text.text(f"Buscando notícias... Página {pagina}, {len(resultados)} de {max_resultados} encontrados.")
         googlenews.get_page(pagina)
-        noticias_pagina = googlenews.result(sort=True) # Usar sort=True pode ajudar na ordem
+        noticias_pagina = googlenews.result(sort=True)
         if not noticias_pagina:
-            break  # Encerra se não houver mais resultados
+            break
         resultados.extend(noticias_pagina)
         pagina += 1
     status_text.empty()
@@ -66,18 +65,13 @@ def buscar_google_news(termo):
     if not resultados:
         return pd.DataFrame()
 
-    # Exibe os resultados no console
     quantidade_noticias = len(resultados)
     print(f'Quantidade de notícias retornadas: {quantidade_noticias}')
 
-    # Coloca todas as noticias num dataframe
     df = pd.DataFrame(resultados)
-    
-    # Limpeza e formatação do DataFrame
     df['link'] = df['link'].str.split('&ved').str[0]
     df.rename(columns={'media': 'source'}, inplace=True)
 
-    # Garante que as colunas essenciais existam antes de retornar
     colunas_necessarias = {'title', 'link', 'source'}
     if not colunas_necessarias.issubset(df.columns):
         st.warning("A busca não retornou as colunas esperadas (title, link, source).")
@@ -86,18 +80,18 @@ def buscar_google_news(termo):
     return df[['title', 'link', 'source']]
 
 
-# --- FUNÇÃO 'PEGA_NOTICIAS' (COM CACHE) ---
+# --- FUNÇÃO 'PEGA_NOTICIAS' ---
 @st.cache_data(ttl=3600)
-def pega_noticias(termo_busca):
+# <-- MUDANÇA AQUI: A função agora aceita 'num_noticias'
+def pega_noticias(termo_busca, num_noticias):
     """Busca notícias, combina e remove duplicatas."""
-    # O spinner agora envolve a chamada da função que pode ser longa
-    with st.spinner("Realizando busca aprofundada de notícias... Isso pode levar alguns minutos."):
-        todas_as_noticias = buscar_google_news(termo_busca)
+    with st.spinner(f"Buscando {num_noticias} notícias... Isso pode levar um momento."):
+        # <-- MUDANÇA AQUI: Passa o número de notícias para a função de busca
+        todas_as_noticias = buscar_google_news(termo_busca, num_noticias)
 
     if todas_as_noticias.empty:
         return pd.DataFrame()
 
-    # Limpa e remove duplicatas
     todas_as_noticias.dropna(subset=['link'], inplace=True)
     noticias_unicas = todas_as_noticias.drop_duplicates(subset=['link'], keep='first')
     noticias_unicas = noticias_unicas.drop_duplicates(subset=['title'], keep='first')
@@ -202,18 +196,30 @@ def gerar_newsletter_streamlit(lista_json):
         noticias_exibidas += 1
     st.write(f"**Exibindo {noticias_exibidas} notícias processadas.**")
 
-# --- INTERFACE PRINCIPAL DO STREAMLIT (INTOCADA) ---
+
+# --- INTERFACE PRINCIPAL DO STREAMLIT ---
 st.set_page_config(page_title="Gerador de Newsletter com IA", layout="centered")
 st.title("📰 Gerador de Newsletter com IA")
-st.markdown("Digite um tema, clique em gerar e obtenha um resumo das últimas notícias do Google News, processado por Inteligência Artificial.")
+st.markdown("Digite um tema, escolha a quantidade e obtenha um resumo das últimas notícias do Google News.")
 
 termo_busca = st.text_input("Qual tema você quer pesquisar?", placeholder="Ex: Novidades sobre o clima")
+
+# <-- MUDANÇA AQUI: Adicionado o input para número de notícias
+num_noticias = st.number_input(
+    "Número de notícias desejado:", 
+    min_value=5,        # Mínimo de 5 notícias
+    max_value=20,       # Máximo de 20 para não sobrecarregar
+    value=10,           # Valor padrão
+    step=5              # Pular de 5 em 5
+)
 
 if st.button("Gerar Newsletter", type="primary"):
     if not termo_busca:
         st.warning("Por favor, digite um termo para a busca.")
     else:
-        df_noticias = pega_noticias(termo_busca)
+        # <-- MUDANÇA AQUI: Passa o número de notícias para a função
+        df_noticias = pega_noticias(termo_busca, num_noticias)
+        
         if not df_noticias.empty:
             df_conteudos = extrair_conteudo_noticias(df_noticias)
             with st.spinner("A Inteligência Artificial está analisando e resumindo as notícias..."):
