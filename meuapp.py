@@ -14,6 +14,11 @@ try:
     from sklearn.metrics.pairwise import cosine_similarity
     from google.generativeai import types
     from pydantic import BaseModel, Field
+    from sklearn.metrics.pairwise import cosine_similarity
+    import numpy as np
+    from google.genai import types
+    from google import genai
+    from google.colab import userdata
 except ImportError as e:
     st.error(f"Erro de importação: {e}. Verifique se todas as bibliotecas estão na versão correta.")
     st.stop()
@@ -207,5 +212,6 @@ if st.button("Gerar Newsletter", type="primary"):
 
     st.success("Newsletter gerada com sucesso!")
     # ... (código de exibição e download) ...
+
 
 
