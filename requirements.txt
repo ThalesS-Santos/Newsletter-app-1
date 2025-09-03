@@ -1,6 +1,8 @@
 streamlit
 pandas
-requests
-google-generativeai
 GoogleNews
+scikit-learn
+google-generativeai
 pydantic
+numpy
+requests
