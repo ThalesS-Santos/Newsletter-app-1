@@ -10,6 +10,7 @@ from typing import List
 # --- Importações das bibliotecas ---
 try:
     from GoogleNews import GoogleNews
+    import google.generativeai as genai
     from sklearn.metrics.pairwise import cosine_similarity
     from google.generativeai import types
     from pydantic import BaseModel, Field
