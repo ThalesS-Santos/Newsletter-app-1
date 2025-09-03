@@ -29,7 +29,7 @@ def buscar_google_news(termo):
     )
 
     # Realiza a busca por notícias relacionadas ao termo 'tecnologia'
-    googlenews.search('Inteligencia Artificial')
+    googlenews.search(termo)
 
     # Define o número máximo de resultados desejados
     max_resultados = 1000
@@ -538,6 +538,7 @@ if st.button('Gerar Newsletter'):
         # --- Exibe a Newsletter HTML na tela ---
         st.subheader("Visualização da Newsletter")
         st.components.v1.html(newsletter_html, height=600, scrolling=True)
+
 
 
 
