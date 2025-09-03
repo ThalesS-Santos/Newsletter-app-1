@@ -1,9 +1,6 @@
 streamlit
 pandas
 requests
-newsdataapi
 google-generativeai
+GoogleNews
 pydantic
-google-search-results
-newsapi-python
-beautifulsoup4
