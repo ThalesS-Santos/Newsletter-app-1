@@ -170,10 +170,16 @@ def processa_noticias_com_gemini(df_conteudos):
     # Nota: A classe Noticia não é mais usada na chamada da API, mas serve como documentação.
     class Noticia(BaseModel):
         titulo: str = Field(..., description="O título da notícia.")
-        data_de_publicacao: str = Field(..., description="A data em que a notícia foi publicada (se disponível).")
-        resumo_curto: str = Field(..., description="Um resumo conciso da notícia, apensa com o assunto principal da noticia, não precisa enrolar muito, apenas o basico para um usuario entender do que se trata a noticia, entre 30 palavras e 50 palavras.")
-        resumo_maior: str = Field(..., description="Um resumo mais detalhado da notícia, apenas com as informações mais relevantes da noticia e algumas observações a mais, com mais de 150 palavras.")
-        links_de_imagens: List[str] = Field(..., description="Uma lista contendo até 2 URLs das imagens mais relevantes da notícia. Se não houver, retorne uma lista vazia.")
+        data_de_publicacao: str = Field(..., description="A data em que a notícia foi publicada. Use sempre o formato: 'DD/MM/AAAA'.")
+        autor: str = Field(..., description="O nome do autor da notícia.")
+        portal: str = Field(..., description="O nome do portal de notícias onde a notícia foi publicada.")
+        resumo_curto: str = Field(..., description="Um resumo conciso da notícia em torno de 50 palavras. De preferência para colocar informação adicional ao titulo (nao repetir a informacao do titulo)")
+        resumo_maior: str = Field(..., description="Um resumo mais detalhado da notícia em torno de 500 palavras.")
+        pontos_principais: List[str] = Field(..., description="um resumo da noticia em formato de lista item a item")
+        noticia_completa: str = Field(..., description="O texto completo da notícia.")
+        links_de_imagens: List[str] = Field(..., description="Uma lista de URLs das imagens associadas à notícia. Considere apenas aquelas relevantes para a noticia. Descarte logos, divulgacoes, etc...")
+        tags_relevantes: List[str] = Field(..., description="Uma lista de tags ou palavras-chave relevantes para a notícia.")
+        prompt_satira_imagem: str = Field(..., description="Um prompt de sátira, baseado no conteúdo da notícia, para ser usado em um gerador de imagens. Deve ser criativo e com um tom humorístico ou irônico.")
 
     respostas_json = []
     links_originais = df_conteudos['link'].tolist()
@@ -190,7 +196,7 @@ def processa_noticias_com_gemini(df_conteudos):
             continue
 
         try:
-            model = genai.GenerativeModel(model_name="gemini-2.5-flash-lite")
+            model = genai.GenerativeModel(model_name="gemini-2.5-flash")
             
             response = model.generate_content(
                 f"""
@@ -298,3 +304,4 @@ if st.button("Gerar Newsletter"):
             gerar_newsletter_streamlit(resumos_json)
         else:
             st.error(f"Nenhuma notícia encontrada para o termo '{termo_busca}' em nenhuma das fontes. Tente outro termo.")
+
