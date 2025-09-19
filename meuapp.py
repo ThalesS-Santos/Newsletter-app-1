@@ -579,14 +579,28 @@ if st.button('Gerar Newsletter'):
         st.components.v1.html(newsletter_html, height=600, scrolling=True)INTERESSE = st.text_input('Interesse')
 TOP_NOTICIAS = st.number_input('Número de Notícias', value = 5)
 
+st.title('Minha Newsletter')
+
+TEMA = st.text_input('Tema')
+# A linha para receber o INTERESSE deve estar aqui no topo, com os outros inputs.
+INTERESSE = st.text_input('Interesse') 
+TOP_NOTICIAS = st.number_input('Número de Notícias', value = 5)
+
 if st.button('Gerar Newsletter'):
     if not TEMA or not INTERESSE:
         st.warning('Por favor, preencha o Tema e o seu Interesse específico.')
     else:
-        # Etapa 1: Pega as notícias
-        with st.spinner('Buscando as notícias mais recentes... 📰', show_time = True):
-            # pois a nova lógica gera os temas de busca a partir do interesse detalhado.
-            pegas = pega_noticias(INTERESSE)
+        # ... (aqui fica todo o código que busca, processa e gera a newsletter)
+        
+        # ...
+
+        st.success('Sua newsletter foi gerada com sucesso!')
+        
+        # --- Exibe a Newsletter HTML na tela ---
+        st.subheader("Visualização da Newsletter")
+        # A linha para EXIBIR o HTML deve estar aqui, dentro do 'if', após a newsletter ser criada.
+        st.components.v1.html(newsletter_html, height=600, scrolling=True)
+
 
         # Etapa 2: Ordena por similaridade
         with st.spinner('Analisando e ordenando as notícias por relevância... 🧠', show_time = True):
@@ -614,3 +628,4 @@ if st.button('Gerar Newsletter'):
         # --- Exibe a Newsletter HTML na tela ---
         st.subheader("Visualização da Newsletter")
         st.components.v1.html(newsletter_html, height=600, scrolling=True)
+
