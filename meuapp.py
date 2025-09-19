@@ -68,28 +68,66 @@ def buscar_google_news(termo):
 
 
 
-def pega_noticias(termo_busca):
-    """Busca notícias de múltiplas fontes, combina e remove duplicatas."""
+def pega_noticias(INTERESSE):
+    """
+    Usa o interesse do usuário, utiliza o Gemini para extrair palavras-chave e gerar temas de busca,
+    pesquisa no Google News para cada tema e retorna um DataFrame combinado e limpo.
+    """
+    # ADICIONADO: A biblioteca 'google.genai' é importada dentro da função, conforme o código original.
+    from google import genai
+    # ADICIONADO: A biblioteca 'pandas' é importada como 'pd', conforme o código original.
+    import pandas as pd
 
-    todas_as_noticias = buscar_google_news(termo_busca)
+    # ADICIONADO: O cliente Gemini é inicializado aqui para a geração de temas.
+    client = genai.Client(api_key = GEMINI_API_KEY)
 
-    if todas_as_noticias.empty:
-        return pd.DataFrame()
-    print('Total de noticias do Google:' + str(todas_as_noticias.shape[0]))
-    # Limpa e remove duplicatas baseadas no link
-    todas_as_noticias.dropna(subset=['link'], inplace=True)
-    print(f"Após remover linhas com link vazio: {todas_as_noticias.shape[0]} notícias")
-    noticias_unicas = todas_as_noticias.drop_duplicates(subset=['link'], keep='first')
-    print(f"Após remover duplicatas por link: {noticias_unicas.shape[0]} notícias")
-    noticias_unicas = noticias_unicas.drop_duplicates(subset=['title'], keep='first')
-    print(f"Após remover duplicatas por título: {noticias_unicas.shape[0]} notícias")
-    #resetaer index
-    noticias_unicas.reset_index(drop=True, inplace=True)
-    print(noticias_unicas.shape)
-    # adicionar um reset_index
+    # ADICIONADO: O prompt para o Gemini gerar os temas de busca com base no interesse do usuário.
+    prompt = f"""
+    Dado o seguinte interesse do usuário, extraia palavras-chave relevantes e gere 3 a 5 temas de busca relacionados que podem ser usados para encontrar notícias no Google News.
+    Formato de saída: Uma lista de strings, onde cada string é um tema de busca.
 
-    print(f"Busca concluída! {noticias_unicas.shape[0]} notícias únicas encontradas.") # Changed st.success to print
-    return  noticias_unicas
+    Interesse do usuário: {INTERESSE}
+    """
+
+    # ADICIONADO: Bloco try-except para a chamada da API Gemini e geração de temas.
+    try:
+        response = client.models.generate_content(
+            model="gemini-2.5-flash", # MANTIDO: O modelo do Gemini não foi alterado, conforme solicitado.
+            contents=prompt,
+            config={
+                "response_mime_type": "application/json",
+                "response_schema": {"type": "array", "items": {"type": "string"}},
+            },
+        )
+        search_themes = json.loads(response.text)
+        print("Temas de busca gerados por Gemini:", search_themes)
+    except Exception as e:
+        print(f"Erro ao gerar temas de busca com Gemini: {e}")
+        return pd.DataFrame() # Retorna um DataFrame vazio em caso de falha.
+
+    # ADICIONADO: Inicialização de um DataFrame vazio para armazenar todas as notícias.
+    all_news_df = pd.DataFrame()
+
+    # ADICIONADO: Loop que itera sobre os temas gerados e busca notícias para cada um.
+    for theme in search_themes:
+        print(f"Buscando notícias para o tema: {theme}")
+        # A função 'buscar_google_news' existente no CÓDIGO 2 é chamada aqui.
+        news_df = buscar_google_news(theme)
+        if not news_df.empty:
+            news_df['search_theme'] = theme
+            all_news_df = pd.concat([all_news_df, news_df], ignore_index=True)
+
+    # ADICIONADO: Bloco para limpar e remover duplicatas do DataFrame combinado.
+    if not all_news_df.empty:
+        all_news_df.dropna(subset=['link'], inplace=True)
+        all_news_df = all_news_df.drop_duplicates(subset=['link'], keep='first')
+        all_news_df = all_news_df.drop_duplicates(subset=['title'], keep='first')
+        all_news_df.reset_index(drop=True, inplace=True)
+
+    # ADICIONADO: Mensagem final informando o total de notícias únicas encontradas.
+    print(f"Busca combinada concluída! {all_news_df.shape[0]} notícias únicas encontradas.")
+    # ADICIONADO: Retorno do DataFrame final com todas as notícias.
+    return all_news_df
 
 def ordenar_noticias_por_similaridade(interesse, df_noticias, top_n=10):
 
@@ -500,7 +538,6 @@ def gerar_html_newsletter(df: pd.DataFrame, interesse: str) -> str:
 
 st.title('Minha Newsletter')
 
-TEMA = st.text_input('Tema')
 INTERESSE = st.text_input('Interesse')
 TOP_NOTICIAS = st.number_input('Número de Notícias', value = 5)
 
@@ -510,36 +547,70 @@ if st.button('Gerar Newsletter'):
     else:
         # Etapa 1: Pega as notícias
         with st.spinner('Buscando as notícias mais recentes... 📰', show_time = True):
-            pegas = pega_noticias(TEMA)
-        
+            # ALTERADO: A chamada da função agora passa a variável 'INTERESSE' em vez de 'TEMA',
+            # pois a nova lógica gera os temas de busca a partir do interesse detalhado.
+            pegas = pega_noticias(INTERESSE)
+
         # Etapa 2: Ordena por similaridade
         with st.spinner('Analisando e ordenando as notícias por relevância... 🧠', show_time = True):
             top_noticias = ordenar_noticias_por_similaridade(
-                interesse=INTERESSE, 
-                df_noticias=pegas, 
+                interesse=INTERESSE,
+                df_noticias=pegas,
                 top_n=int(TOP_NOTICIAS) # Garante que seja inteiro
             )
-        
+
         # Etapa 3: Extrai o conteúdo completo
         with st.spinner('Extraindo o conteúdo completo das principais notícias... 📄', show_time = True):
             extracoes = extrair_conteudo_noticias(top_noticias)
-        
+
         # Etapa 4: Processa com a IA
         with st.spinner('Criando resumos com a ajuda da IA... ✨', show_time = True):
             processados = processa_noticias_com_gemini(extracoes)
-        
+
         # Etapa 5: Gera o HTML final
         with st.spinner('Montando sua newsletter personalizada...  HTML', show_time = True):
             final = pd.concat([extracoes, processados], axis=1)
             newsletter_html = gerar_html_newsletter(final, INTERESSE)
 
         st.success('Sua newsletter foi gerada com sucesso!')
-        
+
+        # --- Exibe a Newsletter HTML na tela ---
+        st.subheader("Visualização da Newsletter")
+        st.components.v1.html(newsletter_html, height=600, scrolling=True)INTERESSE = st.text_input('Interesse')
+TOP_NOTICIAS = st.number_input('Número de Notícias', value = 5)
+
+if st.button('Gerar Newsletter'):
+    if not TEMA or not INTERESSE:
+        st.warning('Por favor, preencha o Tema e o seu Interesse específico.')
+    else:
+        # Etapa 1: Pega as notícias
+        with st.spinner('Buscando as notícias mais recentes... 📰', show_time = True):
+            # pois a nova lógica gera os temas de busca a partir do interesse detalhado.
+            pegas = pega_noticias(INTERESSE)
+
+        # Etapa 2: Ordena por similaridade
+        with st.spinner('Analisando e ordenando as notícias por relevância... 🧠', show_time = True):
+            top_noticias = ordenar_noticias_por_similaridade(
+                interesse=INTERESSE,
+                df_noticias=pegas,
+                top_n=int(TOP_NOTICIAS) # Garante que seja inteiro
+            )
+
+        # Etapa 3: Extrai o conteúdo completo
+        with st.spinner('Extraindo o conteúdo completo das principais notícias... 📄', show_time = True):
+            extracoes = extrair_conteudo_noticias(top_noticias)
+
+        # Etapa 4: Processa com a IA
+        with st.spinner('Criando resumos com a ajuda da IA... ✨', show_time = True):
+            processados = processa_noticias_com_gemini(extracoes)
+
+        # Etapa 5: Gera o HTML final
+        with st.spinner('Montando sua newsletter personalizada...  HTML', show_time = True):
+            final = pd.concat([extracoes, processados], axis=1)
+            newsletter_html = gerar_html_newsletter(final, INTERESSE)
+
+        st.success('Sua newsletter foi gerada com sucesso!')
+
         # --- Exibe a Newsletter HTML na tela ---
         st.subheader("Visualização da Newsletter")
         st.components.v1.html(newsletter_html, height=600, scrolling=True)
-
-
-
-
-
