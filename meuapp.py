@@ -535,97 +535,58 @@ def gerar_html_newsletter(df: pd.DataFrame, interesse: str) -> str:
     return html_content
 
 
+import streamlit as st
+import pandas as pd # Adicione esta linha no topo do seu arquivo se ainda não estiver lá
 
-st.title('Minha Newsletter')
+# --- INTERFACE DO USUÁRIO (STREAMLIT) ---
 
-INTERESSE = st.text_input('Interesse')
-TOP_NOTICIAS = st.number_input('Número de Notícias', value = 5)
+st.title('Minha Newsletter Personalizada')
 
+# 1. ENTRADA DE DADOS DO USUÁRIO
+# Apenas os campos de interesse e número de notícias são necessários agora.
+INTERESSE = st.text_input('Qual é o seu interesse específico? (Ex: o futuro da inteligência artificial no Brasil)')
+TOP_NOTICIAS = st.number_input('Número de notícias desejado', min_value=1, max_value=20, value=5)
+
+# 2. BOTÃO PARA INICIAR O PROCESSO
 if st.button('Gerar Newsletter'):
-    if not TEMA or not INTERESSE:
-        st.warning('Por favor, preencha o Tema e o seu Interesse específico.')
+
+    # 3. VALIDAÇÃO DO INPUT
+    # Verificamos apenas se o INTERESSE foi preenchido.
+    if not INTERESSE:
+        st.warning('Por favor, preencha o seu interesse específico para continuar.')
     else:
+        # 4. EXECUÇÃO DAS ETAPAS (Tudo acontece dentro deste 'else')
+        
         # Etapa 1: Pega as notícias
-        with st.spinner('Buscando as notícias mais recentes... 📰', show_time = True):
-            # ALTERADO: A chamada da função agora passa a variável 'INTERESSE' em vez de 'TEMA',
-            # pois a nova lógica gera os temas de busca a partir do interesse detalhado.
+        with st.spinner('Buscando e gerando temas de notícias... 📰'):
             pegas = pega_noticias(INTERESSE)
 
-        # Etapa 2: Ordena por similaridade
-        with st.spinner('Analisando e ordenando as notícias por relevância... 🧠', show_time = True):
-            top_noticias = ordenar_noticias_por_similaridade(
-                interesse=INTERESSE,
-                df_noticias=pegas,
-                top_n=int(TOP_NOTICIAS) # Garante que seja inteiro
-            )
+        # Verifica se alguma notícia foi encontrada antes de prosseguir
+        if pegas.empty:
+            st.error('Nenhuma notícia encontrada para os temas gerados. Tente um interesse diferente.')
+        else:
+            # Etapa 2: Ordena por similaridade
+            with st.spinner('Analisando e ordenando por relevância... 🧠'):
+                top_noticias = ordenar_noticias_por_similaridade(
+                    interesse=INTERESSE,
+                    df_noticias=pegas,
+                    top_n=int(TOP_NOTICIAS)
+                )
 
-        # Etapa 3: Extrai o conteúdo completo
-        with st.spinner('Extraindo o conteúdo completo das principais notícias... 📄', show_time = True):
-            extracoes = extrair_conteudo_noticias(top_noticias)
+            # Etapa 3: Extrai o conteúdo completo
+            with st.spinner('Extraindo o conteúdo completo dos artigos... 📄'):
+                extracoes = extrair_conteudo_noticias(top_noticias)
 
-        # Etapa 4: Processa com a IA
-        with st.spinner('Criando resumos com a ajuda da IA... ✨', show_time = True):
-            processados = processa_noticias_com_gemini(extracoes)
+            # Etapa 4: Processa com a IA
+            with st.spinner('Criando resumos e insights com IA... ✨'):
+                processados = processa_noticias_com_gemini(extracoes)
 
-        # Etapa 5: Gera o HTML final
-        with st.spinner('Montando sua newsletter personalizada...  HTML', show_time = True):
-            final = pd.concat([extracoes, processados], axis=1)
-            newsletter_html = gerar_html_newsletter(final, INTERESSE)
+            # Etapa 5: Gera o HTML final
+            with st.spinner('Montando sua newsletter personalizada... HTML'):
+                final = pd.concat([extracoes.reset_index(drop=True), processados.reset_index(drop=True)], axis=1)
+                newsletter_html = gerar_html_newsletter(final, INTERESSE)
 
-        st.success('Sua newsletter foi gerada com sucesso!')
-
-        # --- Exibe a Newsletter HTML na tela ---
-        st.subheader("Visualização da Newsletter")
-        st.components.v1.html(newsletter_html, height=600, scrolling=True)INTERESSE = st.text_input('Interesse')
-TOP_NOTICIAS = st.number_input('Número de Notícias', value = 5)
-
-st.title('Minha Newsletter')
-
-TEMA = st.text_input('Tema')
-# A linha para receber o INTERESSE deve estar aqui no topo, com os outros inputs.
-INTERESSE = st.text_input('Interesse') 
-TOP_NOTICIAS = st.number_input('Número de Notícias', value = 5)
-
-if st.button('Gerar Newsletter'):
-    if not TEMA or not INTERESSE:
-        st.warning('Por favor, preencha o Tema e o seu Interesse específico.')
-    else:
-        # ... (aqui fica todo o código que busca, processa e gera a newsletter)
-        
-        # ...
-
-        st.success('Sua newsletter foi gerada com sucesso!')
-        
-        # --- Exibe a Newsletter HTML na tela ---
-        st.subheader("Visualização da Newsletter")
-        # A linha para EXIBIR o HTML deve estar aqui, dentro do 'if', após a newsletter ser criada.
-        st.components.v1.html(newsletter_html, height=600, scrolling=True)
-
-
-        # Etapa 2: Ordena por similaridade
-        with st.spinner('Analisando e ordenando as notícias por relevância... 🧠', show_time = True):
-            top_noticias = ordenar_noticias_por_similaridade(
-                interesse=INTERESSE,
-                df_noticias=pegas,
-                top_n=int(TOP_NOTICIAS) # Garante que seja inteiro
-            )
-
-        # Etapa 3: Extrai o conteúdo completo
-        with st.spinner('Extraindo o conteúdo completo das principais notícias... 📄', show_time = True):
-            extracoes = extrair_conteudo_noticias(top_noticias)
-
-        # Etapa 4: Processa com a IA
-        with st.spinner('Criando resumos com a ajuda da IA... ✨', show_time = True):
-            processados = processa_noticias_com_gemini(extracoes)
-
-        # Etapa 5: Gera o HTML final
-        with st.spinner('Montando sua newsletter personalizada...  HTML', show_time = True):
-            final = pd.concat([extracoes, processados], axis=1)
-            newsletter_html = gerar_html_newsletter(final, INTERESSE)
-
-        st.success('Sua newsletter foi gerada com sucesso!')
-
-        # --- Exibe a Newsletter HTML na tela ---
-        st.subheader("Visualização da Newsletter")
-        st.components.v1.html(newsletter_html, height=600, scrolling=True)
-
+            # 5. EXIBIÇÃO DO RESULTADO FINAL
+            st.success('Sua newsletter foi gerada com sucesso!')
+            st.subheader("Visualização da Newsletter")
+            st.components.v1.html(newsletter_html, height=600, scrolling=True)
