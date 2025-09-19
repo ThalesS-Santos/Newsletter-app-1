@@ -58,6 +58,17 @@ def buscar_google_news(termo):
     # Coloca todas as noticias num dataframe
     import pandas as pd
     df = pd.DataFrame(resultados)
+
+     # --- INÍCIO DA CORREÇÃO ---
+    # ADICIONADO: Verificação para garantir que a coluna 'link' existe.
+    # Se o Google News mudar o HTML de sua página, a biblioteca pode não conseguir extrair os links,
+    # o que causa o erro 'KeyError'. Esta verificação previne que o app quebre.
+    if 'link' not in df.columns:
+        print(f"AVISO: A coluna 'link' não foi encontrada nos resultados para o termo '{termo}'. A busca pode ter falhado. Retornando DataFrame vazio.")
+        # Retorna um DataFrame vazio para que o resto do programa possa continuar sem erros.
+        return pd.DataFrame()
+    # --- FIM DA CORREÇÃO ---
+    
     df['link'] = df['link'].str.split('&ved').str[0]
     # a coluna media deve ser renomeada para source
     df.rename(columns={'media': 'source'}, inplace=True)
@@ -603,5 +614,6 @@ if st.button('Gerar Newsletter'):
             st.success('Sua newsletter foi gerada com sucesso!')
             st.subheader("Visualização da Newsletter")
             st.components.v1.html(newsletter_html, height=600, scrolling=True)
+
 
 
