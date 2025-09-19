@@ -146,7 +146,7 @@ def ordenar_noticias_por_similaridade(interesse, df_noticias, top_n=10):
     
     TEXTOS = df_noticias['title'].to_list()
 
-    client = genai.Client(api_key = userdata.get('GEMINI_API_KEY'))
+    client = genai.Client(api_key = GEMINI_API_KEY)
 
     result = client.models.embed_content(
                 model="gemini-embedding-001",
@@ -603,4 +603,5 @@ if st.button('Gerar Newsletter'):
             st.success('Sua newsletter foi gerada com sucesso!')
             st.subheader("Visualização da Newsletter")
             st.components.v1.html(newsletter_html, height=600, scrolling=True)
+
 
