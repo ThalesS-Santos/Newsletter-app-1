@@ -131,9 +131,22 @@ def pega_noticias(INTERESSE):
 
 def ordenar_noticias_por_similaridade(interesse, df_noticias, top_n=10):
 
+        # --- INÍCIO DA CORREÇÃO ---
+    # ADICIONADO: Filtra o DataFrame para remover notícias sem título (NaN) ou com título vazio ("").
+    # Isso corrige o erro 'The text content is empty' que a API do Gemini retorna.
+    df_noticias.dropna(subset=['title'], inplace=True)
+    df_noticias = df_noticias[df_noticias['title'].str.strip() != '']
+
+    # ADICIONADO: Se a limpeza remover todas as notícias, retorna um DataFrame vazio para evitar mais erros.
+    if df_noticias.empty:
+        print("Nenhuma notícia com título válido encontrada após a limpeza.")
+        return df_noticias
+    # --- FIM DA CORREÇÃO ---
+
+    
     TEXTOS = df_noticias['title'].to_list()
 
-    client = genai.Client(api_key = st.secrets['GEMINI_API_KEY'])
+    client = genai.Client(api_key = userdata.get('GEMINI_API_KEY'))
 
     result = client.models.embed_content(
                 model="gemini-embedding-001",
@@ -590,3 +603,4 @@ if st.button('Gerar Newsletter'):
             st.success('Sua newsletter foi gerada com sucesso!')
             st.subheader("Visualização da Newsletter")
             st.components.v1.html(newsletter_html, height=600, scrolling=True)
+
