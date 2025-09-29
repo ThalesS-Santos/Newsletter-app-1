@@ -91,7 +91,7 @@ def pega_noticias(termo_busca):
     print(f"Busca concluída! {noticias_unicas.shape[0]} notícias únicas encontradas.") # Changed st.success to print
     return  noticias_unicas
 
-def ordenar_noticias_por_similaridade(interesse, df_noticias, top_n = top_n):
+def ordenar_noticias_por_similaridade(interesse, df_noticias, top_n):
 
     TEXTOS = df_noticias['title'].to_list()
 
@@ -538,6 +538,7 @@ if st.button('Gerar Newsletter'):
         # --- Exibe a Newsletter HTML na tela ---
         st.subheader("Visualização da Newsletter")
         st.components.v1.html(newsletter_html, height=600, scrolling=True)
+
 
 
 
