@@ -164,7 +164,7 @@ import time
 import json
 
 def processa_noticias_com_gemini(articles_df):
-    client = genai.Client(api_key = GEMINI_API_KEY)
+    client = genai.Client(api_key = st.secrets['GEMINI_API_KEY'])
 
     class Noticia(BaseModel):
         titulo: str = Field(..., description="O título da notícia.")
@@ -538,3 +538,4 @@ if st.button('Gerar Newsletter'):
         # --- Exibe a Newsletter HTML na tela ---
         st.subheader("Visualização da Newsletter")
         st.components.v1.html(newsletter_html, height=600, scrolling=True)
+
